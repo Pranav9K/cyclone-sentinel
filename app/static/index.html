@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cyclone Sentinel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=0.3.0" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand"><span class="brand-mark">◉</span><span>CYCLONE <b>SENTINEL</b></span></div>
+        <div class="header-status"><span class="pulse"></span><span id="data-status">CONNECTING DATASET…</span><span class="header-divider">/</span> NORTH INDIAN OCEAN</div>
+      </header>
+      <section class="hero-card">
+        <div class="hero-copy"><p class="eyebrow">AI-ASSISTED CYCLONE INTELLIGENCE</p><h1 id="storm-name">Loading storm…</h1><p id="storm-subtitle" class="subhead"></p></div>
+        <aside class="replay-card"><span class="tag">RESEARCH REPLAY</span><span>Not an official forecast</span><small>Follow IMD warnings</small></aside>
+      </section>
+      <section class="metrics" id="metrics"></section>
+      <section class="content-grid">
+        <section class="card map-card"><div class="card-head"><div><p class="eyebrow">TRACK INTELLIGENCE</p><h2>Observed & predicted path</h2></div><div class="legend"><i class="observed"></i>Observed <i class="forecast"></i>Baseline</div></div><div class="map-frame"><div id="map"></div><div class="map-badge"><span>MODEL</span><b>Track v0.1</b></div></div><p class="map-caption">Circles show baseline test-error scaling—not an official uncertainty cone.</p></section>
+        <div class="side-column">
+          <section class="card assessment-card"><p class="eyebrow">MODEL ASSESSMENT</p><div id="classification" class="classification"></div><div class="confidence-track"><span id="confidence-bar"></span></div><p id="confidence-copy" class="muted"></p></section>
+          <section class="card forecast-card"><p class="eyebrow">FORECAST SUMMARY</p><div id="forecast-list" class="forecast-list"></div></section>
+        </div>
+      </section>
+      <section class="card roadmap-card"><div class="card-head"><div><p class="eyebrow">IMPACT PRIORITIZATION</p><h2>Impact layer roadmap</h2></div><p class="muted">Transparent next data layers</p></div><div id="risk-grid" class="risk-grid"></div></section>
+      <footer>SIH26070 · Multi-source satellite cyclone identification, classification & prediction</footer>
+    </main>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="/static/app.js?v=0.3.0"></script>
+  </body>
+</html>

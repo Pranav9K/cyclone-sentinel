@@ -1,0 +1,14 @@
+{
+  "description": "Small, diverse North Indian Ocean cohort for validating multi-source feature collection before scaling to all IBTrACS storms.",
+  "storm_ids": [
+    "2019116N02090",
+    "2020136N10088",
+    "2021133N10071",
+    "2021143N15090",
+    "2022126N07095",
+    "2022295N13093",
+    "2023129N08091",
+    "2023156N10067",
+    "2024145N14087"
+  ]
+}
