@@ -1,17 +1,18 @@
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.historical_replay import data_ready, list_replays, prediction_payload as baseline_prediction, replay
-from app.sample_data import STORM, prediction_payload
+from app.historical_replay import data_ready, latest_replay_id, list_replays, prediction_payload as baseline_prediction, replay
 
 ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = ROOT.parent
 MANIFEST_PATH = PROJECT_ROOT / "data" / "processed" / "ibtracs_ni_manifest.json"
 PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
+LIVE_SOURCES_PATH = PROJECT_ROOT / "config" / "live_satellite_sources.json"
 
 app = FastAPI(
     title="Cyclone Sentinel API",
@@ -21,6 +22,91 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 
 
+def read_json_object(path: Path) -> dict:
+    """Read a generated manifest without making the public status API fragile."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def source_layer_status(source: str) -> str:
+    """Report measured feature coverage separately from collection planning."""
+    feature_manifest = read_json_object(PROCESSED_DIR / f"{source}_features_manifest.json")
+    feature_output = feature_manifest.get("output", {})
+    records_written = feature_output.get("records_written", 0) if isinstance(feature_output, dict) else 0
+    if feature_manifest.get("status") == "ready" and isinstance(records_written, int) and records_written > 0:
+        return "ready"
+    if feature_manifest.get("status") == "partial" and isinstance(records_written, int) and records_written > 0:
+        return "partial_coverage"
+    if isinstance(feature_manifest.get("status"), str) and feature_manifest["status"].startswith("waiting_for_"):
+        return "waiting_for_raw_data"
+
+    collection_manifest = read_json_object(PROCESSED_DIR / f"{source}_manifest.json")
+    if source == "era5":
+        requests = collection_manifest.get("requests")
+        if isinstance(requests, list) and requests:
+            return "ready_for_feature_extraction"
+        return "credentials_required"
+
+    collection_status = collection_manifest.get("status")
+    if collection_status == "complete":
+        return "ready_for_feature_extraction"
+    if collection_status == "planned_dry_run":
+        return "planned"
+    if collection_status == "blocked_local_earthdata_credentials_missing":
+        return "credentials_required"
+    return "credentials_required"
+
+
+def live_satellite_products() -> dict:
+    """Return operational-source readiness without exposing credentials or raw files."""
+    source_config = read_json_object(LIVE_SOURCES_PATH)
+    source_entries = source_config.get("sources", [])
+    products: list[dict] = []
+    for source in source_entries if isinstance(source_entries, list) else []:
+        if not isinstance(source, dict):
+            continue
+        source_id = source.get("id")
+        if not isinstance(source_id, str):
+            continue
+        product = {
+            "id": source_id,
+            "name": source.get("name", source_id),
+            "provider": source.get("provider", "Unknown provider"),
+            "mode": source.get("mode", "Operational source"),
+            "coverage": source.get("coverage", "Not specified"),
+            "nominal_latency": source.get("nominal_latency", "Not specified"),
+            "status": "credentials_required" if source.get("authentication") == "Earthdata Login" else "not_polled",
+            "latest": None,
+        }
+        manifest_reference = source.get("manifest")
+        if isinstance(manifest_reference, str):
+            manifest = read_json_object(PROJECT_ROOT / manifest_reference)
+            if manifest.get("status") == "ready":
+                latest = manifest.get("latest")
+                product["latest"] = latest if isinstance(latest, dict) else None
+                published_at = latest.get("published_at") if isinstance(latest, dict) else None
+                max_age = source.get("max_metadata_age_hours")
+                try:
+                    published = datetime.fromisoformat(str(published_at).replace("Z", "+00:00"))
+                    if published.tzinfo is None:
+                        raise ValueError
+                    age_hours = (datetime.now(UTC) - published.astimezone(UTC)).total_seconds() / 3600
+                    product["metadata_age_hours"] = round(age_hours, 1)
+                    product["status"] = "metadata_current" if isinstance(max_age, (int, float)) and age_hours <= max_age else "stale"
+                except (TypeError, ValueError):
+                    product["status"] = "metadata_unverified"
+            elif manifest.get("status") == "unavailable":
+                product["status"] = "unavailable"
+        products.append(product)
+    return {
+        "products": products,
+        "next_step": "Use fresh provider metadata only; then configure local provider access for imagery and GPM IMERG Early/Late.",
+    }
+
+
 @app.get("/", include_in_schema=False)
 def dashboard() -> FileResponse:
     return FileResponse(ROOT / "static" / "index.html")
@@ -28,45 +114,134 @@ def dashboard() -> FileResponse:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "mode": "historical_baseline" if data_ready() else "demo"}
+    return {"status": "ok", "mode": "historical_baseline" if data_ready() else "data_unavailable"}
 
 
 @app.get("/api/v1/storms")
 def list_storms() -> list[dict[str, str]]:
-    if data_ready():
-        return [{"id": item["id"], "name": item["name"], "season": str(item["season"]), "basin": "North Indian Ocean"} for item in list_replays()]
-    return [{"id": STORM["id"], "name": STORM["name"], "season": STORM["season"], "basin": STORM["basin"]}]
+    if not data_ready():
+        return []
+    return [
+        {
+            "id": str(item["id"]),
+            "name": str(item["name"]),
+            "season": str(item["season"]),
+            "basin": "North Indian Ocean",
+            "peak_category": str(item.get("peak_category", "Cyclonic Storm")),
+            "last_observed_at": str(item["last_observed_at"]),
+        }
+        for item in list_replays()
+    ]
+
+
+@app.get("/api/v1/storms/current")
+def current_storm() -> dict:
+    """Return the most recent collected storm with a valid historical replay."""
+    if not data_ready():
+        raise HTTPException(status_code=503, detail="Collected replay data is unavailable")
+    try:
+        return replay(latest_replay_id())
+    except ValueError:
+        raise HTTPException(status_code=503, detail="No replayable collected storm is available") from None
 
 
 @app.get("/api/v1/storms/{storm_id}")
 def storm(storm_id: str) -> dict:
-    if data_ready():
-        try:
-            return replay(storm_id)
-        except (KeyError, ValueError):
-            raise HTTPException(status_code=404, detail="Historical storm replay not found") from None
-    if storm_id != STORM["id"]:
-        raise HTTPException(status_code=404, detail="Storm not found")
-    return STORM
+    if not data_ready():
+        raise HTTPException(status_code=503, detail="Collected replay data is unavailable")
+    try:
+        return replay(storm_id)
+    except (KeyError, ValueError):
+        raise HTTPException(status_code=404, detail="Historical storm replay not found") from None
 
 
 @app.get("/api/v1/storms/{storm_id}/prediction")
 def prediction(storm_id: str) -> dict:
-    if data_ready():
-        try:
-            return baseline_prediction(storm_id)
-        except (KeyError, ValueError):
-            raise HTTPException(status_code=404, detail="Historical storm replay not found") from None
-    if storm_id != STORM["id"]:
-        raise HTTPException(status_code=404, detail="Storm not found")
-    return prediction_payload()
+    if not data_ready():
+        raise HTTPException(status_code=503, detail="Collected replay data is unavailable")
+    try:
+        return baseline_prediction(storm_id)
+    except (KeyError, ValueError):
+        raise HTTPException(status_code=404, detail="Historical storm replay not found") from None
+
+
+@app.get("/api/v1/storms/{storm_id}/bulletin")
+def storm_bulletin(storm_id: str) -> dict[str, str]:
+    """Return the official IMD / RSMC Tropical Cyclone Advisory Bulletin payload."""
+    if not data_ready():
+        raise HTTPException(status_code=503, detail="Collected replay data is unavailable")
+    try:
+        item = replay(storm_id)
+        return {
+            "storm_id": item["id"],
+            "name": item["name"],
+            "issued_at": item["last_updated"],
+            "bulletin": item.get("bulletin_text", ""),
+        }
+    except (KeyError, ValueError):
+        raise HTTPException(status_code=404, detail="Historical storm replay not found") from None
+
+
+@app.get("/api/v1/storms/{storm_id}/bulletin/text", response_class=PlainTextResponse)
+def storm_bulletin_text(storm_id: str) -> str:
+    """Return the raw plaintext IMD / RSMC Tropical Cyclone Advisory Bulletin."""
+    if not data_ready():
+        raise HTTPException(status_code=503, detail="Collected replay data is unavailable")
+    try:
+        item = replay(storm_id)
+        return item.get("bulletin_text", "Bulletin unavailable")
+    except (KeyError, ValueError):
+        raise HTTPException(status_code=404, detail="Historical storm replay not found") from None
+
+
+@app.get("/api/v1/storms/{storm_id}/dvorak")
+def storm_dvorak(storm_id: str) -> dict:
+    """Return Dvorak cloud pattern classification, T-number, and visual attribution."""
+    if not data_ready():
+        raise HTTPException(status_code=503, detail="Collected replay data is unavailable")
+    try:
+        item = replay(storm_id)
+        return {"storm_id": item["id"], "name": item["name"], "dvorak": item.get("dvorak", {})}
+    except (KeyError, ValueError):
+        raise HTTPException(status_code=404, detail="Historical storm replay not found") from None
+
+
+@app.get("/api/v1/storms/{storm_id}/ri")
+def storm_ri(storm_id: str) -> dict:
+    """Return Rapid Intensification (RI) risk assessment and physical drivers."""
+    if not data_ready():
+        raise HTTPException(status_code=503, detail="Collected replay data is unavailable")
+    try:
+        item = replay(storm_id)
+        return {"storm_id": item["id"], "name": item["name"], "rapid_intensification": item.get("rapid_intensification", {})}
+    except (KeyError, ValueError):
+        raise HTTPException(status_code=404, detail="Historical storm replay not found") from None
+
+
+@app.get("/api/v1/storms/{storm_id}/impact")
+def storm_impact(storm_id: str) -> dict:
+    """Return coastal landfall forecast, storm surge, and district exposure tiers."""
+    if not data_ready():
+        raise HTTPException(status_code=503, detail="Collected replay data is unavailable")
+    try:
+        item = replay(storm_id)
+        return {
+            "storm_id": item["id"],
+            "name": item["name"],
+            "landfall": item.get("landfall", {}),
+            "district_risk": item.get("district_risk", []),
+        }
+    except (KeyError, ValueError):
+        raise HTTPException(status_code=404, detail="Historical storm replay not found") from None
 
 
 @app.get("/api/v1/data/status")
 def data_status() -> dict:
     """Report whether official historical training data has been collected."""
     if MANIFEST_PATH.exists():
-        return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+        manifest = read_json_object(MANIFEST_PATH)
+        if manifest:
+            return manifest
     return {
         "status": "not_collected",
         "source": "NOAA IBTrACS North Indian Ocean best-track archive",
@@ -78,9 +253,9 @@ def data_status() -> dict:
 def data_catalog() -> dict:
     """Describe source-layer readiness without exposing raw data files."""
     multisource_manifest_path = PROCESSED_DIR / "multisource_training_manifest.json"
-    multisource_counts: dict[str, int] = {}
-    if multisource_manifest_path.exists():
-        multisource_counts = json.loads(multisource_manifest_path.read_text(encoding="utf-8")).get("counts", {})
+    multisource_manifest = read_json_object(multisource_manifest_path)
+    raw_counts = multisource_manifest.get("counts", {})
+    multisource_counts = raw_counts if isinstance(raw_counts, dict) else {}
     multisource_status = (
         "ready"
         if multisource_counts.get("complete", 0) > 0
@@ -110,13 +285,13 @@ def data_catalog() -> dict:
         {
             "id": "era5",
             "name": "ERA5 atmospheric context",
-            "status": "ready" if (PROCESSED_DIR / "era5_manifest.json").exists() else "credentials_required",
+            "status": source_layer_status("era5"),
             "purpose": "Wind, pressure, SST, water-vapour features",
         },
         {
             "id": "imerg",
             "name": "GPM IMERG rainfall",
-            "status": "ready" if (PROCESSED_DIR / "imerg_manifest.json").exists() else "credentials_required",
+            "status": source_layer_status("imerg"),
             "purpose": "Historic precipitation features",
         },
         {
@@ -133,4 +308,13 @@ def data_catalog() -> dict:
             "purpose": "Satellite pattern classification",
         },
     ]
-    return {"layers": layers, "next_milestone": "Collect event-aligned ERA5 data for Cyclone Biparjoy."}
+    return {
+        "layers": layers,
+        "next_milestone": "Configure local CDS credentials, collect event-aligned ERA5, then run ERA5 extraction.",
+    }
+
+
+@app.get("/api/v1/live/products")
+def live_products() -> dict:
+    """Describe real-time satellite product readiness and freshest provider metadata."""
+    return live_satellite_products()

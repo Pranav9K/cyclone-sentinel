@@ -26,13 +26,19 @@ era5_sst_k,era5_tcw_kg_m2,era5_dewpoint_k,era5_missing
 Write `data/processed/imerg_features.csv`. Prefix every derived column with `imerg_`. The initial recommended fields are:
 
 ```text
-imerg_center_rate_mm_hr,imerg_mean_5deg_mm_hr,imerg_p95_5deg_mm_hr,
-imerg_max_5deg_mm_hr,imerg_random_error_mean_mm_hr,
-imerg_quality_index_mean,imerg_6h_accumulation_mm,
-imerg_24h_accumulation_mm,imerg_missing
+imerg_granule_start_utc,imerg_center_precipitation_cal_mm_hr,
+imerg_window_mean_precipitation_cal_mm_hr,imerg_window_p95_precipitation_cal_mm_hr,
+imerg_window_max_precipitation_cal_mm_hr,imerg_window_mean_random_error_mm_hr,
+imerg_window_mean_quality_index,imerg_accumulation_6h_mm,
+imerg_accumulation_24h_mm,imerg_missing
 ```
 
-For every accumulation, only use intervals whose end time is at or before `timestamp_utc`.
+`imerg_granule_start_utc` records the source half-hour interval used for the
+instantaneous features. For every accumulation, use only complete intervals
+whose end time is at or before `timestamp_utc`; never replace missing rainfall
+with zero. `imerg_accumulation_6h_mm` and `imerg_accumulation_24h_mm` are sums
+of the ±2.5° window-mean rate across complete 30-minute intervals (`rate × 0.5`
+hours), not future or partially filled intervals.
 
 ## Missing data
 

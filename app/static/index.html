@@ -3,35 +3,281 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Cyclone Sentinel</title>
+    <title>Cyclone Sentinel · MoES Tropical Cyclone Intelligence</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="/static/styles.css?v=0.3.0" />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <link rel="stylesheet" href="/static/styles.css?v=1.0.1" />
   </head>
   <body>
     <main class="shell">
+      <!-- TOP BAR -->
       <header class="topbar">
-        <div class="brand"><span class="brand-mark">◉</span><span>CYCLONE <b>SENTINEL</b></span></div>
-        <div class="header-status"><span class="pulse"></span><span id="data-status">CONNECTING DATASET…</span><span class="header-divider">/</span> NORTH INDIAN OCEAN</div>
-      </header>
-      <section class="hero-card">
-        <div class="hero-copy"><p class="eyebrow">AI-ASSISTED CYCLONE INTELLIGENCE</p><h1 id="storm-name">Loading storm…</h1><p id="storm-subtitle" class="subhead"></p></div>
-        <aside class="replay-card"><span class="tag">RESEARCH REPLAY</span><span>Not an official forecast</span><small>Follow IMD warnings</small></aside>
-      </section>
-      <section class="metrics" id="metrics"></section>
-      <section class="content-grid">
-        <section class="card map-card"><div class="card-head"><div><p class="eyebrow">TRACK INTELLIGENCE</p><h2>Observed & predicted path</h2></div><div class="legend"><i class="observed"></i>Observed <i class="forecast"></i>Baseline</div></div><div class="map-frame"><div id="map"></div><div class="map-badge"><span>MODEL</span><b>Track v0.1</b></div></div><p class="map-caption">Circles show baseline test-error scaling—not an official uncertainty cone.</p></section>
-        <div class="side-column">
-          <section class="card assessment-card"><p class="eyebrow">MODEL ASSESSMENT</p><div id="classification" class="classification"></div><div class="confidence-track"><span id="confidence-bar"></span></div><p id="confidence-copy" class="muted"></p></section>
-          <section class="card forecast-card"><p class="eyebrow">FORECAST SUMMARY</p><div id="forecast-list" class="forecast-list"></div></section>
+        <div class="brand">
+          <span class="brand-mark">◉</span>
+          <span>CYCLONE <b>SENTINEL</b></span>
+          <span class="brand-sub">MoES SIH26070</span>
         </div>
+        <div class="topbar-controls">
+          <div class="selector-wrap">
+            <label for="storm-select" class="selector-label">SELECT STORM:</label>
+            <select id="storm-select" class="storm-select" aria-label="Select Cyclone"></select>
+          </div>
+          <button id="btn-bulletin" class="btn-topbar" title="View official RSMC New Delhi style advisory">
+            <span class="btn-icon">📄</span> IMD RSMC Bulletin
+          </button>
+          <div class="header-status">
+            <span class="pulse"></span>
+            <span id="data-status">CONNECTING DATASET…</span>
+            <span class="header-divider">/</span> NORTH INDIAN OCEAN
+          </div>
+        </div>
+      </header>
+
+      <!-- HERO SECTION -->
+      <section class="hero-card">
+        <div class="hero-copy">
+          <div class="hero-tags">
+            <span class="eyebrow">AI-ASSISTED CYCLONE MONITORING & IMPACT</span>
+            <span id="ri-pill" class="badge-pill badge-neutral">CHECKING RI RISK…</span>
+            <span id="landfall-pill" class="badge-pill badge-neutral">CHECKING LANDFALL…</span>
+          </div>
+          <h1 id="storm-name">Loading storm…</h1>
+          <p id="storm-subtitle" class="subhead"></p>
+        </div>
+        <aside class="replay-card">
+          <span class="tag">RESEARCH REPLAY</span>
+          <span class="replay-mode" id="replay-mode-text">IBTrACS + Dvorak + RI Model</span>
+          <small>Follow official IMD warnings</small>
+        </aside>
       </section>
-      <section class="card roadmap-card"><div class="card-head"><div><p class="eyebrow">IMPACT PRIORITIZATION</p><h2>Impact layer roadmap</h2></div><p class="muted">Transparent next data layers</p></div><div id="risk-grid" class="risk-grid"></div></section>
-      <footer>SIH26070 · Multi-source satellite cyclone identification, classification & prediction</footer>
+
+      <!-- METRICS GRID -->
+      <section class="metrics" id="metrics" aria-label="Current Observations"></section>
+
+      <!-- MAP SECTION WITH TIME SCRUBBER & LAYER TOGGLES -->
+      <section class="card map-card-full" aria-labelledby="map-title">
+        <div class="card-head map-head">
+          <div>
+            <p class="eyebrow">SPATIAL FORECAST & SATELLITE OVERLAY</p>
+            <h2 id="map-title">Track, Cone of Uncertainty & Radii</h2>
+          </div>
+          <!-- MAP LAYER TOGGLE CHIPS -->
+          <div class="map-controls-group" id="map-layer-toggles">
+            <button class="layer-chip active" data-layer="track" title="Toggle Observed & Forecast Tracks">
+              <span class="chip-dot dot-track"></span>Track & Cone
+            </button>
+            <button class="layer-chip active" data-layer="radii" title="Toggle 34kt, 50kt, 64kt Quadrant Wind Radii">
+              <span class="chip-dot dot-radii"></span>Wind Radii
+            </button>
+            <button class="layer-chip active" data-layer="satellite" title="Toggle Simulated INSAT-3D IR BD-Curve Satellite Canopy">
+              <span class="chip-dot dot-sat"></span>INSAT IR (BD-Curve)
+            </button>
+            <button class="layer-chip active" data-layer="districts" title="Toggle Coastal District Vulnerability Tiers">
+              <span class="chip-dot dot-risk"></span>Districts at Risk
+            </button>
+          </div>
+        </div>
+
+        <!-- TIMELINE PLAYBACK / SCRUBBER BAR -->
+        <div class="timeline-bar" id="timeline-toolbar">
+          <div class="playback-buttons">
+            <button id="btn-scrub-first" class="btn-ctrl" title="Jump to Storm Genesis">⏮</button>
+            <button id="btn-scrub-prev" class="btn-ctrl" title="Step Back 6 Hours">◀</button>
+            <button id="btn-scrub-play" class="btn-ctrl btn-play" title="Play / Pause Replay Animation">▶ PLAY</button>
+            <button id="btn-scrub-next" class="btn-ctrl" title="Step Forward 6 Hours">▶</button>
+            <button id="btn-scrub-last" class="btn-ctrl" title="Jump to Issue Point">⏭</button>
+          </div>
+          <div class="scrubber-track-wrap">
+            <input type="range" id="time-slider" min="0" max="10" value="10" step="1" aria-label="Historical observation timeline" />
+            <div class="scrub-labels">
+              <span>GENESIS</span>
+              <span id="scrub-timestamp" class="scrub-timestamp">Loading…</span>
+              <span>LATEST + 72H</span>
+            </div>
+          </div>
+          <div class="scrub-telemetry" id="scrub-telemetry">
+            <div class="telemetry-item"><span class="label">FIX:</span> <b id="telemetry-coords">—</b></div>
+            <div class="telemetry-item"><span class="label">WIND:</span> <b id="telemetry-wind">—</b></div>
+            <div class="telemetry-item"><span class="label">STAGE:</span> <b id="telemetry-stage">—</b></div>
+          </div>
+        </div>
+
+        <!-- LEAFLET MAP FRAME -->
+        <div class="map-frame">
+          <div id="map"></div>
+          <div class="map-badge">
+            <span>MODEL HORIZON</span>
+            <b>0h · 24h · 48h · 72h</b>
+          </div>
+          <div class="map-legend-overlay">
+            <div class="legend-row"><span class="leg-color col-obs"></span>Observed Track</div>
+            <div class="legend-row"><span class="leg-color col-fore"></span>Forecast Track</div>
+            <div class="legend-row"><span class="leg-color col-cone"></span>70% Uncertainty Cone</div>
+            <div class="legend-row"><span class="leg-color col-r64"></span>64 kt Hurricane Ring</div>
+            <div class="legend-row"><span class="leg-color col-r34"></span>34 kt Gale Envelope</div>
+          </div>
+        </div>
+        <p class="map-caption">
+          Forecast cone represents 70% probability envelope based on held-out baseline test errors. Wind radii depict asymmetric quadrants (NE, SE, SW, NW).
+        </p>
+      </section>
+
+      <!-- INTELLIGENCE CARDS GRID -->
+      <section class="intelligence-grid">
+        <!-- 1. DVORAK CLOUD PATTERN CLASSIFIER CARD -->
+        <article class="card intel-card" id="card-dvorak">
+          <div class="card-head">
+            <div>
+              <p class="eyebrow">DVORAK TECHNIQUE (IMD STANDARD)</p>
+              <h2>Satellite Pattern & T-Number</h2>
+            </div>
+            <span id="dvorak-badge" class="pattern-badge">EYE PATTERN</span>
+          </div>
+          <div class="dvorak-overview">
+            <div class="dvorak-dial">
+              <span class="dial-val" id="dvorak-t-num">T4.5</span>
+              <span class="dial-lbl" id="dvorak-ci-num">CI 4.5</span>
+            </div>
+            <div class="dvorak-meta">
+              <p id="dvorak-desc" class="dvorak-desc">Evaluating cloud pattern morphology…</p>
+              <div class="dvorak-pressure-stat">
+                <span>ESTIMATED CENTRAL PRESSURE DEFICIT (ΔP):</span>
+                <b id="dvorak-delta-p">— hPa</b>
+              </div>
+            </div>
+          </div>
+          <!-- CLOUD METRICS TABLE -->
+          <div class="cloud-metrics-grid" id="cloud-metrics"></div>
+          <!-- FEATURE ATTRIBUTION (XAI) -->
+          <div class="attribution-box">
+            <span class="attr-title">EXPLAINABLE AI · CONVECTIVE FEATURE WEIGHTS</span>
+            <div id="attribution-bars" class="attr-bars"></div>
+          </div>
+        </article>
+
+        <!-- 2. RAPID INTENSIFICATION (RI) DIAGNOSTICS CARD -->
+        <article class="card intel-card" id="card-ri">
+          <div class="card-head">
+            <div>
+              <p class="eyebrow">WMO / IMD RI DIAGNOSTIC ENGINE</p>
+              <h2>Rapid Intensification (RI)</h2>
+            </div>
+            <span id="ri-alert-badge" class="ri-alert-badge">CHECKING…</span>
+          </div>
+          <div class="ri-meter-section">
+            <div class="ri-prob-display">
+              <span class="ri-prob-number" id="ri-prob-val">0%</span>
+              <span class="ri-prob-label">24H RI PROBABILITY</span>
+            </div>
+            <div class="ri-prob-bar-track">
+              <div id="ri-prob-bar" class="ri-prob-bar"></div>
+            </div>
+          </div>
+          <p id="ri-summary" class="ri-summary-text"></p>
+          <div class="ri-factors-grid" id="ri-factors"></div>
+          <div class="ri-projection-box">
+            <div class="proj-col">
+              <span class="proj-lbl">STEADY STATE 24H:</span>
+              <b id="proj-steady">— kt</b>
+            </div>
+            <div class="proj-col proj-ri">
+              <span class="proj-lbl">RAPID INTENSIFICATION (RI):</span>
+              <b id="proj-ri">— kt</b>
+            </div>
+          </div>
+        </article>
+
+        <!-- 3. COASTAL LANDFALL & SURGE HAZARD CARD -->
+        <article class="card intel-card" id="card-landfall">
+          <div class="card-head">
+            <div>
+              <p class="eyebrow">DISASTER MANAGEMENT & EARLY IMPACT</p>
+              <h2>Landfall & Coastal Vulnerability</h2>
+            </div>
+            <span id="landfall-status-badge" class="landfall-badge">ASSESSING…</span>
+          </div>
+          <div class="landfall-summary-box">
+            <div class="lf-item">
+              <span class="lf-lbl">EXPECTED SECTOR / LANDMARK:</span>
+              <b id="lf-landmark" class="lf-landmark">—</b>
+            </div>
+            <div class="lf-grid-stats">
+              <div>
+                <span class="lf-lbl">NEAREST PORT:</span>
+                <b id="lf-port">—</b>
+              </div>
+              <div>
+                <span class="lf-lbl">ESTIMATED TIME (IST):</span>
+                <b id="lf-eta-ist">—</b>
+              </div>
+              <div>
+                <span class="lf-lbl">CATEGORY AT LANDFALL:</span>
+                <b id="lf-category">—</b>
+              </div>
+              <div>
+                <span class="lf-lbl">PROJECTED SURGE INUNDATION:</span>
+                <b id="lf-surge" class="lf-surge">—</b>
+              </div>
+            </div>
+          </div>
+          <div class="districts-header">
+            <span>HIGH-RISK COASTAL DISTRICTS</span>
+            <span class="districts-sub">POPULATION & ALERT TIERS</span>
+          </div>
+          <div id="districts-list" class="districts-list"></div>
+        </article>
+      </section>
+
+      <!-- MULTI-SOURCE PIPELINE STATUS -->
+      <section class="card pipeline-card-shell" aria-labelledby="pipeline-title">
+        <div class="card-head pipeline-head">
+          <div><p class="eyebrow">DATA FOUNDATION</p><h2 id="pipeline-title">Multi-source pipeline</h2></div>
+          <span id="pipeline-summary" class="pipeline-summary">CHECKING COVERAGE…</span>
+        </div>
+        <div id="pipeline-grid" class="pipeline-grid" aria-live="polite"></div>
+        <div class="pipeline-footer"><span class="pipeline-footer-dot"></span><span id="pipeline-next">Loading next data milestone…</span></div>
+      </section>
+
+      <!-- OPERATIONAL SATELLITE PRODUCTS -->
+      <section class="card live-card" aria-labelledby="live-title">
+        <div class="card-head pipeline-head">
+          <div><p class="eyebrow">OPERATIONAL SATELLITE PRODUCTS</p><h2 id="live-title">Live source watch</h2></div>
+          <span id="live-summary" class="pipeline-summary">CHECKING PROVIDERS…</span>
+        </div>
+        <div id="live-grid" class="live-grid" aria-live="polite"></div>
+        <div class="pipeline-footer"><span class="pipeline-footer-dot"></span><span id="live-next">Loading operational-source status…</span></div>
+      </section>
+
+      <!-- FOOTER -->
+      <footer>
+        SIH26070 · Ministry of Earth Sciences (MoES) · Multi-source satellite cyclone identification, classification & prediction
+      </footer>
     </main>
+
+    <!-- OFFICIAL IMD BULLETIN MODAL -->
+    <div id="bulletin-modal" class="modal-backdrop" style="display: none;" hidden>
+      <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-header">
+          <div>
+            <span class="eyebrow">OFFICIAL METEOROLOGICAL ADVISORY</span>
+            <h3 id="modal-title">IMD / RSMC Tropical Cyclone Bulletin</h3>
+          </div>
+          <button id="btn-close-modal" class="btn-close" aria-label="Close Bulletin Modal" title="Close (Esc)">✕</button>
+        </div>
+        <div class="modal-actions-bar">
+          <button id="btn-copy-bulletin" class="btn-action">📋 Copy Bulletin Text</button>
+          <button id="btn-download-bulletin" class="btn-action">⬇️ Download Advisory (.txt)</button>
+          <button id="btn-close-bulletin-action" class="btn-action btn-action-close">✕ Close</button>
+          <span id="copy-status" class="copy-status"></span>
+        </div>
+        <pre id="bulletin-content" class="bulletin-text">Loading advisory bulletin…</pre>
+      </div>
+    </div>
+
+    <!-- SCRIPTS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <script src="/static/app.js?v=0.3.0"></script>
+    <script src="/static/app.js?v=1.0.1"></script>
   </body>
 </html>

@@ -1,13 +1,14 @@
 """Plan and collect event-aligned GPM IMERG Final V07 granules.
 
 The script deliberately separates source acquisition from feature extraction.
-It creates one deterministic half-hourly IMERG task for every timestamp in the
-multi-source collection plan, records the direct GES DISC and OPeNDAP URLs, and
+It creates deduplicated causal half-hourly IMERG tasks for every timestamp in
+the multi-source collection plan, records the direct GES DISC and OPeNDAP URLs, and
 only downloads data when locally configured Earthdata credentials are present.
 
-The direct files are global HDF5 granules.  A follow-on extractor can spatially
-subset them around the matching IBTrACS position and write the feature contract
-recorded in the generated manifest.  This keeps the collector dependency-light:
+The direct files are global HDF5 granules. The source windows contain the 48
+complete intervals required for every causal 24-hour accumulation. A follow-on
+extractor can spatially subset them around the matching IBTrACS position and
+write the feature contract recorded in the generated manifest. This keeps the collector dependency-light:
 it uses only Python's standard library and does not pretend to derive rainfall
 statistics without an HDF5 reader.
 
@@ -130,15 +131,15 @@ def utc_text(value: datetime) -> str:
 
 
 def imerg_granule_start(timestamp: datetime) -> datetime:
-    """Return the start of the half-hour IMERG interval containing ``timestamp``.
+    """Return the latest *completed* half-hourly interval's start time.
 
-    Track timestamps normally land exactly on a 30-minute boundary.  Flooring
-    makes the mapping deterministic even if a future plan includes an arbitrary
-    minute or second, while preserving the original track timestamp as the
-    downstream join key.
+    Feature values must be knowable at the prediction issue time.  We therefore
+    use the interval ending at the most recent half-hour boundary, rather than
+    the interval that contains the timestamp (which would leak future rainfall).
     """
     normalized = timestamp.astimezone(UTC).replace(second=0, microsecond=0)
-    return normalized - timedelta(minutes=normalized.minute % 30)
+    completed_end = normalized - timedelta(minutes=normalized.minute % 30)
+    return completed_end - timedelta(minutes=30)
 
 
 def imerg_filename(granule_start: datetime) -> str:
@@ -176,9 +177,9 @@ def build_urls(granule_start: datetime, filename: str) -> tuple[str, str]:
     return direct_url, opendap_url
 
 
-def task_id(storm_id: str, timestamp: datetime, filename: str) -> str:
+def task_id(storm_id: str, granule_start: datetime, filename: str) -> str:
     """Create a compact, reproducible task identifier without secrets."""
-    key = f"{DATASET}|{storm_id}|{utc_text(timestamp)}|{filename}".encode("utf-8")
+    key = f"{DATASET}|{storm_id}|{utc_text(granule_start)}|{filename}".encode("utf-8")
     return f"imerg-{hashlib.sha256(key).hexdigest()[:16]}"
 
 
@@ -222,9 +223,14 @@ def selected_storms(plan: dict[str, Any], storm_id: str | None) -> list[dict[str
 
 
 def build_tasks(storms: Iterable[dict[str, Any]], output_dir: Path) -> list[dict[str, Any]]:
-    """Build one sorted, deterministic IMERG acquisition task per plan timestamp."""
+    """Build raw tasks for causal instantaneous, 6h, and 24h rainfall features.
+
+    The 6h and 24h features require 12 and 48 complete half-hourly intervals,
+    respectively.  We deduplicate the union across a storm's issue times so the
+    downloaded raw collection is compact but still sufficient to calculate the
+    stated feature contract without filling gaps.
+    """
     tasks: list[dict[str, Any]] = []
-    targets: set[Path] = set()
     for storm in storms:
         storm_id = str(storm["storm_id"])
         parsed_steps: list[tuple[datetime, str]] = []
@@ -239,23 +245,28 @@ def build_tasks(storms: Iterable[dict[str, Any]], output_dir: Path) -> list[dict
             seen_timestamps.add(timestamp)
             parsed_steps.append((timestamp, utc_text(timestamp)))
 
+        required_granules: dict[datetime, set[str]] = {}
         for timestamp, timestamp_text in sorted(parsed_steps, key=lambda item: item[0]):
             granule_start = imerg_granule_start(timestamp)
+            # `granule_start` is the latest completed interval.  Forty-eight
+            # intervals (including it) cover the causal 24 hours ending at the
+            # issue time; this also subsumes the 6-hour window.
+            for offset in range(48):
+                candidate = granule_start - timedelta(minutes=30 * offset)
+                required_granules.setdefault(candidate, set()).add(timestamp_text)
+
+        for granule_start, issue_times in sorted(required_granules.items()):
             filename = imerg_filename(granule_start)
             direct_url, opendap_url = build_urls(granule_start, filename)
             day_of_year = granule_start.timetuple().tm_yday
             target = output_dir / storm_id / f"{granule_start.year}" / f"{day_of_year:03d}" / filename
-            if target in targets:
-                raise ValueError(f"Two plan timestamps resolve to the same IMERG target: {target}")
-            targets.add(target)
-            time_offset_seconds = int((timestamp - granule_start).total_seconds())
             tasks.append({
-                "task_id": task_id(storm_id, timestamp, filename),
+                "task_id": task_id(storm_id, granule_start, filename),
                 "storm_id": storm_id,
-                "timestamp_utc": timestamp_text,
+                "granule_start_utc": utc_text(granule_start),
+                "contributes_to_issue_times_utc": sorted(issue_times),
                 "imerg_granule_start_utc": utc_text(granule_start),
-                "granule_time_offset_seconds": time_offset_seconds,
-                "temporal_alignment": "half-hour granule start at or before track timestamp",
+                "temporal_alignment": "completed half-hour granule ending at or before each issue time",
                 "dataset": DATASET,
                 "collection_concept_id": COLLECTION_CONCEPT_ID,
                 "filename": filename,
@@ -425,7 +436,10 @@ def feature_contract() -> dict[str, Any]:
         },
         "spatial_window": "2.5 degrees in latitude and longitude around the matched IBTrACS centre",
         "temporal_policy": {
-            "instantaneous": "Use the task's imerg_granule_start_utc; do not relabel the join key.",
+            "instantaneous": (
+                "Use the completed half-hour interval ending at or before the issue time; "
+                "do not relabel the join key."
+            ),
             "accumulations": (
                 "Sum complete half-hourly precipitationCal intervals ending at the "
                 "matched timestamp (rate * 0.5 hours). Do not fill missing intervals."
@@ -606,7 +620,7 @@ def main() -> None:
     opener = build_authenticated_opener(credentials)
     failures = 0
     for index, task in enumerate(tasks, start=1):
-        print(f"[{index}/{len(tasks)}] {task['storm_id']} {task['timestamp_utc']}…")
+        print(f"[{index}/{len(tasks)}] {task['storm_id']} {task['granule_start_utc']}…")
         try:
             task.update(
                 download_task(

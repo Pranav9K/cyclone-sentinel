@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "id": "insat3d_imager",
+      "name": "INSAT-3D Imager",
+      "provider": "MOSDAC / ISRO",
+      "mode": "operational imagery metadata",
+      "coverage": "India and the North Indian Ocean",
+      "nominal_latency": "Provider feed dependent",
+      "authentication": "Public RSS metadata; product download follows MOSDAC access rules",
+      "feed_url": "https://mosdac.gov.in/3dimager.xml",
+      "manifest": "data/processed/live_insat_manifest.json",
+      "max_metadata_age_hours": 6
+    },
+    {
+      "id": "imerg_early",
+      "name": "GPM IMERG Early Run V07",
+      "provider": "NASA GES DISC",
+      "mode": "near-real-time precipitation",
+      "coverage": "Global, including the North Indian Ocean",
+      "nominal_latency": "About 4 hours",
+      "authentication": "Earthdata Login",
+      "dataset_reference": "10.5067/GPM/IMERG/3B-HH-E/07"
+    },
+    {
+      "id": "imerg_late",
+      "name": "GPM IMERG Late Run V07",
+      "provider": "NASA GES DISC",
+      "mode": "near-real-time precipitation",
+      "coverage": "Global, including the North Indian Ocean",
+      "nominal_latency": "About 14 hours",
+      "authentication": "Earthdata Login",
+      "dataset_reference": "10.5067/GPM/IMERG/3B-HH-L/07"
+    }
+  ]
+}
