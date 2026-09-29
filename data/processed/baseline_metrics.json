@@ -1,0 +1,36 @@
+{
+  "forecast_horizon_hours": 24,
+  "generated_at_utc": "2026-09-26T11:59:19.065202+00:00",
+  "input_path": "C:\\Users\\Pranav\\Files\\Code\\MachineLearning\\sih-qualifiers\\data\\processed\\ibtracs_ni_tracks.csv",
+  "input_storms": 265,
+  "model_note": "Research baseline only; not an operational or safety-critical forecast.",
+  "split": {
+    "cutoff_utc": "2021-05-23T21:00:00+00:00",
+    "dropped_boundary_samples": 5,
+    "strategy": "chronological issue-time split; train targets are strictly before the cutoff",
+    "test_samples": 1412,
+    "train_samples": 5642
+  },
+  "test_metrics": {
+    "intensity": {
+      "persistence_wind_mae_knots": 9.665,
+      "samples": 1225,
+      "wind_bias_knots": 0.436,
+      "wind_mae_knots": 9.003,
+      "wind_rmse_knots": 12.228
+    },
+    "track": {
+      "endpoint_mae_km": 149.287,
+      "endpoint_median_km": 123.992,
+      "endpoint_p90_km": 285.808,
+      "latitude_mae_degrees": 0.693,
+      "longitude_delta_mae_degrees": 1.059,
+      "motion_persistence_endpoint_mae_km": 163.595,
+      "samples": 1412
+    }
+  },
+  "training_samples": {
+    "intensity": 5257,
+    "track": 5642
+  }
+}

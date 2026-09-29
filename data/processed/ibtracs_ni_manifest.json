@@ -1,0 +1,11 @@
+{
+  "status": "ready",
+  "source": "NOAA IBTrACS v04r01 \u2014 North Indian Ocean subset",
+  "source_url": "https://www.ncei.noaa.gov/data/international-best-track-archive-for-climate-stewardship-ibtracs/v04r01/access/csv/ibtracs.NI.list.v04r01.csv",
+  "license_note": "Use the NOAA citation and technical documentation when publishing results.",
+  "start_year": 2000,
+  "records": 9633,
+  "raw_path": "data/raw/ibtracs/ibtracs.NI.list.v04r01.csv",
+  "processed_path": "data/processed/ibtracs_ni_tracks.csv",
+  "collected_at_utc": "2026-09-26T11:31:48.516462+00:00"
+}
