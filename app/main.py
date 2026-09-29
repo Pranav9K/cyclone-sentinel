@@ -6,7 +6,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.historical_replay import data_ready, latest_replay_id, list_replays, prediction_payload as baseline_prediction, replay
+from app.historical_replay import (
+    data_ready,
+    latest_replay_id,
+    list_all_storm_tracks,
+    list_replays,
+    prediction_payload as baseline_prediction,
+    replay,
+)
 
 ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = ROOT.parent
@@ -154,6 +161,14 @@ def list_storms() -> list[dict[str, str]]:
         }
         for item in list_replays()
     ]
+
+
+@app.get("/api/v1/storms/basin/all")
+def basin_storm_tracks() -> list[dict]:
+    """Return simplified tracks of all collected storms for full-basin visualization."""
+    if not data_ready():
+        return []
+    return list_all_storm_tracks()
 
 
 @app.get("/api/v1/storms/current")

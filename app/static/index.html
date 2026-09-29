@@ -1,156 +1,490 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Cyclone Sentinel · Historical Cyclone Research</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Cyclone Sentinel · Satellite Simulation & Historical Replay</title>
+    <meta name="description" content="AI-assisted tropical cyclone monitoring, satellite swirl simulation, and historical replay dashboard for the North Indian Ocean." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/static/styles.css?v=1.4.0" />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/vendor/leaflet.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=2.0.0" />
   </head>
-  <body>
-    <header class="navbar">
-      <button class="brand" data-view-target="overview" aria-label="Open overview">
-        <span class="brand-mark">◌</span><span>Cyclone <strong>Sentinel</strong><small>SIH 26070 · Research workspace</small></span>
-      </button>
-      <nav class="nav-links" aria-label="Dashboard sections">
-        <button class="nav-link active" data-view-target="overview">Overview</button>
-        <button class="nav-link" data-view-target="map-view">Map</button>
-        <button class="nav-link" data-view-target="analysis">Storm analysis</button>
-        <button class="nav-link" data-view-target="coastal">Coastal screen</button>
-        <button class="nav-link" data-view-target="sources">Data sources</button>
-      </nav>
-      <label class="theme-toggle" for="theme-toggle" title="Switch between light and dark mode">
-        <span class="theme-sun" aria-hidden="true">☀</span>
-        <input id="theme-toggle" type="checkbox" aria-label="Turn dark mode on or off" />
-        <span class="theme-slider" aria-hidden="true"><span></span></span>
-        <span class="theme-moon" aria-hidden="true">☾</span>
-      </label>
-      <button id="btn-bulletin" class="brief-button">Research brief</button>
+  <body class="command-center">
+    <!-- Fullscreen Interactive Satellite Map & Simulation Canvas -->
+    <div id="map-container" class="map-container" aria-label="Interactive Satellite Map of North Indian Ocean">
+      <div id="map"></div>
+      <canvas id="cyclone-canvas" aria-hidden="true"></canvas>
+    </div>
+
+    <!-- Top HUD: Command Center Header -->
+    <header id="top-hud" class="top-hud" aria-label="Command Center Status and Controls">
+      <div class="hud-left">
+        <div class="brand-cluster">
+          <div class="radar-beacon" aria-hidden="true">
+            <span class="beacon-core"></span>
+            <span class="beacon-ring"></span>
+          </div>
+          <div class="brand-title">
+            <span class="brand-name">CYCLONE <strong>SENTINEL</strong></span>
+            <span class="brand-tag">SIH 26070 · SATELLITE SIMULATION HUD</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="hud-center">
+        <div id="hud-ticker" class="hud-ticker" aria-live="polite">
+          <span id="hud-storm-name" class="ticker-storm">Loading Cyclone…</span>
+          <span id="hud-storm-category" class="ticker-cat cat-badge">—</span>
+          <span class="ticker-divider" aria-hidden="true">|</span>
+          <span id="hud-storm-coords" class="ticker-stat">--.-°N, --.-°E</span>
+          <span class="ticker-divider" aria-hidden="true">|</span>
+          <span id="hud-storm-wind" class="ticker-stat">💨 <strong>—</strong> km/h</span>
+          <span class="ticker-divider" aria-hidden="true">|</span>
+          <span id="hud-storm-pressure" class="ticker-stat">⏱ <strong>—</strong> hPa</span>
+        </div>
+      </div>
+
+      <div class="hud-right">
+        <!-- Basemap Mode Selector -->
+        <div class="hud-btn-group" role="group" aria-label="Basemap Style">
+          <button id="btn-layer-sat" class="hud-toggle-btn active" data-map-layer="satellite" title="Satellite Imagery">🛰 Sat</button>
+          <button id="btn-layer-dark" class="hud-toggle-btn" data-map-layer="dark" title="Dark Carto Operations">🌑 Dark</button>
+          <button id="btn-layer-hybrid" class="hud-toggle-btn" data-map-layer="hybrid" title="Terrain & Topography">🗺 Topo</button>
+        </div>
+
+        <!-- Cloud Color / Sensor Mode -->
+        <div class="hud-btn-group" role="group" aria-label="Cloud Simulation Palette">
+          <button id="btn-cloud-vis" class="hud-toggle-btn active" data-cloud-mode="visible" title="Natural Visible Satellite Clouds">☁ Vis</button>
+          <button id="btn-cloud-ir" class="hud-toggle-btn" data-cloud-mode="infrared" title="Infrared Thermal Cloud Top Temperature">🌡 IR</button>
+          <button id="btn-cloud-radar" class="hud-toggle-btn" data-cloud-mode="radar" title="Doppler Radar Rainbands">🌧 Radar</button>
+        </div>
+
+        <!-- Research Brief Modal Button -->
+        <button id="btn-bulletin" class="hud-action-btn" title="Open Non-Operational Research Brief">
+          <span class="btn-icon">📋</span> Brief
+        </button>
+
+        <!-- Fullscreen Button -->
+        <button id="btn-fullscreen" class="hud-action-btn icon-only" title="Toggle Fullscreen" aria-label="Toggle Fullscreen">
+          ⛶
+        </button>
+      </div>
     </header>
 
-    <main class="page-shell">
-      <section class="storm-picker" aria-label="Choose a historical storm">
-        <div>
-          <p class="eyebrow">HISTORICAL RESEARCH REPLAY</p>
-          <p class="picker-copy">Choose a collected storm to explore. This is not a live warning service.</p>
-        </div>
-        <div class="storm-picker-control">
-          <span class="picker-label">Choose a storm</span>
-          <button id="storm-select" class="storm-select-button" type="button" aria-expanded="false" aria-controls="storm-select-menu">
-            <span id="storm-select-label">Loading storms…</span><span class="select-chevron" aria-hidden="true">⌄</span>
+    <!-- Left HUD: Ergonomic Sidebar Panel -->
+    <aside id="left-hud" class="left-hud" aria-label="Storm Telemetry and Research Analysis">
+      <button id="btn-toggle-left-hud" class="sidebar-toggle" title="Collapse / Expand Sidebar" aria-label="Collapse / Expand Sidebar">
+        <span class="toggle-icon">◀</span>
+      </button>
+
+      <div class="left-hud-inner">
+        <!-- Storm Selector & Quick Switcher -->
+        <section class="storm-selector-panel" aria-label="Storm Selection">
+          <div class="storm-selector-header">
+            <span class="panel-eyebrow">NORTH INDIAN OCEAN CYCLONES</span>
+            <div class="storm-nav-arrows">
+              <button id="btn-prev-storm" class="nav-arrow-btn" title="Previous Storm" aria-label="Previous Storm">◀</button>
+              <button id="btn-next-storm" class="nav-arrow-btn" title="Next Storm" aria-label="Next Storm">▶</button>
+            </div>
+          </div>
+
+          <!-- Active Storm Trigger Button -->
+          <button id="storm-select-button" class="storm-dropdown-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="storm-dropdown-menu">
+            <div class="storm-trigger-info">
+              <strong id="storm-select-name">Loading Storm…</strong>
+              <small id="storm-select-meta">Historical Replay</small>
+            </div>
+            <span class="dropdown-chevron" aria-hidden="true">⌄</span>
           </button>
-          <div id="storm-select-menu" class="storm-select-menu" hidden>
-            <label class="storm-search-label" for="storm-search">Search historical storms</label>
-            <input id="storm-search" type="search" placeholder="Search by name or year" autocomplete="off" />
-            <div id="storm-options" class="storm-options" role="listbox" aria-label="Available historical storms"></div>
-          </div>
-        </div>
-      </section>
 
-      <section id="overview" class="view active" aria-labelledby="storm-name">
-        <div class="hero-card">
-          <div>
-            <p class="eyebrow">START HERE</p>
-            <h1 id="storm-name">Loading storm…</h1>
-            <p id="storm-subtitle" class="subtitle">Loading collected observations…</p>
-          </div>
-          <div class="research-note">
-            <span>About this page</span>
-            <strong>Historical replay</strong>
-            <p id="replay-mode-text">Loading data details…</p>
-          </div>
-        </div>
-
-        <div id="metrics" class="metric-grid" aria-live="polite"></div>
-
-        <section class="plain-card safety-card">
-          <span class="safety-icon">i</span>
-          <div>
-            <h2>How to use this dashboard</h2>
-            <p>It helps you explore past cyclone data and a research model. For current weather, warnings, evacuation, or travel decisions, use official IMD and local-authority information.</p>
+          <!-- Searchable Dropdown Menu -->
+          <div id="storm-dropdown-menu" class="storm-dropdown-menu" hidden>
+            <div class="search-box">
+              <input id="storm-search-input" type="search" placeholder="Search 88 cyclones (e.g. Amphan, Fani)..." autocomplete="off" />
+            </div>
+            <div class="filter-chips" role="radiogroup" aria-label="Filter Storms">
+              <button class="chip active" data-filter="all">All</button>
+              <button class="chip" data-filter="Super Cyclonic Storm">Super</button>
+              <button class="chip" data-filter="Extremely Severe">Extremely Severe</button>
+              <button class="chip" data-filter="Very Severe">Very Severe</button>
+              <button class="chip" data-filter="recent">Recent (2020+)</button>
+            </div>
+            <div id="storm-options-list" class="storm-options-list" role="listbox" aria-label="Storm list"></div>
           </div>
         </section>
 
-        <section class="section-heading">
-          <div><p class="eyebrow">CHOOSE WHAT TO VIEW</p><h2>Explore one topic at a time</h2></div>
-        </section>
-        <div class="action-grid">
-          <button class="action-card" data-view-target="map-view"><span>⌁</span><strong>See the route</strong><small>View the observed track and research baseline path.</small></button>
-          <button class="action-card" data-view-target="analysis"><span>◔</span><strong>Understand strength</strong><small>Read plain-language intensity and RI screening details.</small></button>
-          <button class="action-card" data-view-target="coastal"><span>⌖</span><strong>Explore coastal context</strong><small>See a static proximity screen for reference districts.</small></button>
-          <button class="action-card" data-view-target="sources"><span>▤</span><strong>Check the data</strong><small>See what has been collected and what is still missing.</small></button>
-        </div>
-      </section>
+        <!-- Navigation Tabs -->
+        <nav class="hud-tabs" role="tablist" aria-label="Sidebar Sections">
+          <button id="tab-btn-telemetry" class="hud-tab active" role="tab" aria-selected="true" aria-controls="pane-telemetry" data-tab="telemetry">
+            ⚡ Telemetry
+          </button>
+          <button id="tab-btn-analysis" class="hud-tab" role="tab" aria-selected="false" aria-controls="pane-analysis" data-tab="analysis">
+            🔬 Analysis
+          </button>
+          <button id="tab-btn-coastal" class="hud-tab" role="tab" aria-selected="false" aria-controls="pane-coastal" data-tab="coastal">
+            🌊 Coastal
+          </button>
+          <button id="tab-btn-sources" class="hud-tab" role="tab" aria-selected="false" aria-controls="pane-sources" data-tab="sources">
+            📡 Sources
+          </button>
+        </nav>
 
-      <section id="map-view" class="view" aria-labelledby="map-title" hidden>
-        <div class="section-heading split-heading">
-          <div><p class="eyebrow">3D STORM GLOBE</p><h2 id="map-title">Where did the storm travel?</h2><p>Drag to rotate the globe. The solid line is the collected historical track; the dashed line is a research baseline replay.</p></div>
-          <div class="map-toggle-row" aria-label="Map display controls">
-            <button class="map-toggle active" data-layer="track">Track</button>
-            <button class="map-toggle active" data-layer="cone">Error envelope</button>
-            <button class="map-toggle active" data-layer="radii">Wind extent</button>
+        <!-- Tab Content Area -->
+        <div class="hud-tab-content">
+          <!-- TAB 1: TELEMETRY & OVERVIEW -->
+          <div id="pane-telemetry" class="tab-pane active" role="tabpanel" aria-labelledby="tab-btn-telemetry">
+            <!-- Current Storm Status Banner -->
+            <div class="telemetry-hero-card">
+              <div class="hero-top">
+                <span class="hero-badge" id="telemetry-category-badge">Cyclonic Storm</span>
+                <span class="hero-season" id="telemetry-season">Season —</span>
+              </div>
+              <h2 id="telemetry-storm-title" class="hero-title">—</h2>
+              <p id="telemetry-last-observed" class="hero-subtitle">Loading observations…</p>
+            </div>
+
+            <!-- Big Gauges Row -->
+            <div class="gauge-grid">
+              <div class="gauge-card">
+                <span class="gauge-label">MAX SUSTAINED WIND</span>
+                <div class="gauge-val-group">
+                  <span id="telemetry-wind-val" class="gauge-val">—</span>
+                  <span class="gauge-unit">km/h</span>
+                </div>
+                <div class="wind-speed-bar">
+                  <div id="wind-speed-fill" class="wind-speed-fill"></div>
+                </div>
+                <small id="telemetry-wind-kts" class="gauge-caption">— knots</small>
+              </div>
+
+              <div class="gauge-card">
+                <span class="gauge-label">CENTRAL PRESSURE</span>
+                <div class="gauge-val-group">
+                  <span id="telemetry-pressure-val" class="gauge-val">—</span>
+                  <span class="gauge-unit">hPa</span>
+                </div>
+                <div class="pressure-bar">
+                  <div id="pressure-fill" class="pressure-fill"></div>
+                </div>
+                <small id="telemetry-pressure-drop" class="gauge-caption">— hPa deficit</small>
+              </div>
+            </div>
+
+            <!-- Secondary Metrics Grid -->
+            <div class="metric-mini-grid">
+              <div class="metric-mini-card">
+                <span class="mini-label">DVORAK PROXY</span>
+                <strong id="telemetry-dvorak-val" class="mini-val">—</strong>
+                <small id="telemetry-dvorak-pattern">Intensity-derived proxy</small>
+              </div>
+
+              <div class="metric-mini-card">
+                <span class="mini-label">RI SCREENING</span>
+                <strong id="telemetry-ri-score" class="mini-val">—</strong>
+                <small id="telemetry-ri-badge" class="mini-tag">Screening</small>
+              </div>
+
+              <div class="metric-mini-card">
+                <span class="mini-label">GPM RAINFALL</span>
+                <strong id="telemetry-rainfall-val" class="mini-val">—</strong>
+                <small id="telemetry-rainfall-source">IMERG mm/hr</small>
+              </div>
+
+              <div class="metric-mini-card">
+                <span class="mini-label">DATA MODE</span>
+                <strong class="mini-val">IBTrACS</strong>
+                <small>Historical Replay</small>
+              </div>
+            </div>
+
+            <!-- Asymmetric Wind Radii Readout -->
+            <div class="hud-card">
+              <div class="card-head">
+                <span class="card-title">ASYMMETRIC WIND RADII EXTENT</span>
+                <span class="card-sub">Calculated quadrants</span>
+              </div>
+              <div id="wind-radii-container" class="wind-radii-rows">
+                <div class="radii-row">
+                  <span class="radii-tag tag-r34">34 kt Gale (63 km/h)</span>
+                  <span id="radii-r34-val" class="radii-val">Loading…</span>
+                </div>
+                <div class="radii-row">
+                  <span class="radii-tag tag-r50">50 kt Storm (93 km/h)</span>
+                  <span id="radii-r50-val" class="radii-val">Loading…</span>
+                </div>
+                <div class="radii-row">
+                  <span class="radii-tag tag-r64">64 kt Hurricane (119 km/h)</span>
+                  <span id="radii-r64-val" class="radii-val">Loading…</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2: RESEARCH ANALYSIS (DVORAK & RI) -->
+          <div id="pane-analysis" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-analysis" hidden>
+            <!-- Dvorak Detail Card -->
+            <div class="hud-card">
+              <div class="card-head">
+                <span class="card-title">DVORAK INTENSITY CLASSIFICATION</span>
+                <span class="card-sub">Research proxy · No raw imagery used</span>
+              </div>
+              <div class="dvorak-summary">
+                <div class="dvorak-t-display">
+                  <span class="dvorak-large-t" id="analysis-dvorak-t">—</span>
+                  <div>
+                    <span id="analysis-dvorak-type" class="dvorak-type-badge">Analyzing…</span>
+                    <small id="analysis-dvorak-ci" class="dvorak-ci-text">CI —</small>
+                  </div>
+                </div>
+                <p id="analysis-dvorak-desc" class="analysis-copy">Loading Dvorak proxy details…</p>
+                <div class="spec-list">
+                  <div><span>Central Pressure Deficit</span><strong id="analysis-dvorak-deficit">—</strong></div>
+                  <div><span>Estimated Environmental Pressure</span><strong id="analysis-dvorak-env-pres">—</strong></div>
+                  <div><span>Cloud Eye Pattern</span><strong id="analysis-dvorak-eye">—</strong></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Rapid Intensification Screening Card -->
+            <div class="hud-card">
+              <div class="card-head">
+                <span class="card-title">RAPID INTENSIFICATION (RI) SCREEN</span>
+                <span id="analysis-ri-status-tag" class="card-sub-tag">Screening</span>
+              </div>
+              <div class="ri-score-banner">
+                <div class="ri-score-circle">
+                  <span id="analysis-ri-num">0</span>
+                  <small>/100</small>
+                </div>
+                <div class="ri-score-meta">
+                  <strong id="analysis-ri-heading">Screening score</strong>
+                  <p id="analysis-ri-summary" class="analysis-copy">Assessing environmental parameters…</p>
+                </div>
+              </div>
+              <div class="factor-breakdown-list" id="analysis-ri-factors"></div>
+            </div>
+
+            <!-- Held-out Model Metrics -->
+            <div class="hud-card">
+              <div class="card-head">
+                <span class="card-title">BASELINE RIDGE-MODEL ERROR</span>
+                <span class="card-sub">Held-out test set metrics</span>
+              </div>
+              <div class="forecast-error-grid">
+                <div class="error-item">
+                  <span class="error-step">+24 Hours</span>
+                  <strong id="analysis-err-24">±150 km</strong>
+                  <small>MAE radius</small>
+                </div>
+                <div class="error-item">
+                  <span class="error-step">+48 Hours</span>
+                  <strong id="analysis-err-48">±212 km</strong>
+                  <small>MAE radius</small>
+                </div>
+                <div class="error-item">
+                  <span class="error-step">+72 Hours</span>
+                  <strong id="analysis-err-72">±260 km</strong>
+                  <small>MAE radius</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 3: COASTAL PROXIMITY SCREEN -->
+          <div id="pane-coastal" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-coastal" hidden>
+            <div class="hud-card warning-accent">
+              <div class="card-head">
+                <span class="card-title">LANDFALL & PROXIMITY SCREEN</span>
+                <span class="safety-disclaimer-pill">Non-operational research</span>
+              </div>
+              <div class="coastal-summary-grid">
+                <div class="coastal-stat-box">
+                  <span class="c-label">NEAREST LANDMARK</span>
+                  <strong id="coastal-nearest-landmark">—</strong>
+                </div>
+                <div class="coastal-stat-box">
+                  <span class="c-label">NEAREST MAJOR PORT</span>
+                  <strong id="coastal-nearest-port">—</strong>
+                </div>
+                <div class="coastal-stat-box">
+                  <span class="c-label">REFERENCE-TRACK ETA</span>
+                  <strong id="coastal-eta-ist">—</strong>
+                </div>
+                <div class="coastal-stat-box">
+                  <span class="c-label">WIND-ONLY SURGE PROXY</span>
+                  <strong id="coastal-surge-proxy">—</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="hud-card">
+              <div class="card-head">
+                <span class="card-title">EXPOSED REFERENCE DISTRICTS</span>
+                <span class="card-sub">Static proximity screen</span>
+              </div>
+              <div id="coastal-district-list" class="district-items-list">
+                <p class="empty-list-notice">Loading district proximity screen…</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 4: DATA SOURCES & READINESS -->
+          <div id="pane-sources" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-sources" hidden>
+            <div class="hud-card">
+              <div class="card-head">
+                <span class="card-title">DATA LAYER PIPELINE</span>
+                <span class="card-sub">Multi-source engineering</span>
+              </div>
+              <div id="sources-pipeline-list" class="source-status-list"></div>
+              <p id="sources-pipeline-next" class="sources-next-caption">Loading milestone…</p>
+            </div>
+
+            <div class="hud-card">
+              <div class="card-head">
+                <span class="card-title">OPERATIONAL SATELLITE WATCH</span>
+                <span class="card-sub">Provider freshness status</span>
+              </div>
+              <div id="sources-live-list" class="source-status-list"></div>
+              <p id="sources-live-next" class="sources-next-caption">Loading provider watch…</p>
+            </div>
           </div>
         </div>
-        <div class="map-card"><div class="globe-stage"><div id="globe" role="img" aria-label="Rotatable and zoomable 3D globe showing real country boundaries and the selected cyclone historical track"></div><div class="globe-zoom-controls" aria-label="Globe zoom controls"><button id="globe-zoom-out" type="button" aria-label="Zoom out">−</button><output id="globe-zoom-value" for="globe-zoom">100%</output><button id="globe-zoom-in" type="button" aria-label="Zoom in">+</button><button id="globe-reset" type="button">Reset view</button><label class="sr-only" for="globe-zoom">Globe zoom</label><input id="globe-zoom" type="range" min="65" max="320" value="100" step="5" /></div></div><p class="globe-help">The white centre mark is the latest recorded storm point · Drag to rotate · Pinch, scroll, or use the zoom controls · Country boundaries: Natural Earth · This is a data visualisation, not satellite imagery.</p></div>
-        <p class="caption">The dashed envelope uses held-out model error. It is not a probability cone. Wind extent is a wind-only display proxy.</p>
-        <div id="forecast-list" class="forecast-list"></div>
-      </section>
+      </div>
+    </aside>
 
-      <section id="analysis" class="view" aria-labelledby="analysis-title" hidden>
-        <div class="section-heading"><p class="eyebrow">STORM ANALYSIS</p><h2 id="analysis-title">What does the research model show?</h2><p>These are explanatory research screens, not satellite analyses or forecasts.</p></div>
-        <div class="two-column">
-          <article class="plain-card analysis-card">
-            <p class="eyebrow">STRENGTH PROXY</p><h3>Dvorak-scale number</h3>
-            <div class="big-number" id="dvorak-t-num">—</div>
-            <p id="dvorak-desc">Loading…</p>
-            <dl class="simple-list"><div><dt>Intensity label</dt><dd id="dvorak-badge">—</dd></div><div><dt>Pressure difference proxy</dt><dd id="dvorak-delta-p">—</dd></div></dl>
-            <p class="fine-print">Calculated from historical wind and pressure. No INSAT imagery is used.</p>
-          </article>
-          <article class="plain-card analysis-card">
-            <p class="eyebrow">CHANGE-IN-STRENGTH SCREEN</p><h3>Rapid intensification screen</h3>
-            <div class="score-row"><strong id="ri-score">—</strong><span id="ri-alert-badge">Loading…</span></div>
-            <div class="score-track"><span id="ri-score-bar"></span></div>
-            <p id="ri-summary">Loading…</p>
-            <div id="ri-factors" class="factor-list"></div>
-            <p class="fine-print">This score is not a probability or an official alert.</p>
-          </article>
+    <!-- Bottom HUD: Timeline & Simulation Controller -->
+    <footer id="bottom-hud" class="bottom-hud" aria-label="Cyclone Simulation and Timeline Controls">
+      <!-- Row 1: Time, Waypoint & Phase Info -->
+      <div class="timeline-meta-bar">
+        <div class="meta-left">
+          <span id="sim-step-badge" class="sim-step-badge">OBSERVATION 1 / 1</span>
+          <span id="sim-phase-badge" class="phase-badge phase-observed">HISTORICAL BEST-TRACK</span>
         </div>
-      </section>
+        <div class="meta-center">
+          <span class="time-label">TIMESTAMP:</span>
+          <strong id="sim-time-utc" class="time-utc">2020-05-18 12:00:00 UTC</strong>
+          <span id="sim-time-ist" class="time-ist">(17:30 IST)</span>
+        </div>
+        <div class="meta-right">
+          <span id="sim-telemetry-pill" class="telemetry-pill">240 km/h · 920 hPa · Super Cyclonic Storm</span>
+        </div>
+      </div>
 
-      <section id="coastal" class="view" aria-labelledby="coastal-title" hidden>
-        <div class="section-heading"><p class="eyebrow">COASTAL CONTEXT</p><h2 id="coastal-title">Static coastal-proximity screen</h2><p>This compares the research route with static district reference points. It is not a landfall prediction or warning.</p></div>
-        <article class="plain-card coastal-summary">
-          <div><span class="label">Nearest static reference</span><strong id="lf-landmark">—</strong></div>
-          <div><span class="label">Nearest port</span><strong id="lf-port">—</strong></div>
-          <div><span class="label">Reference-track time</span><strong id="lf-eta-ist">—</strong></div>
-          <div><span class="label">Wind-only surge proxy</span><strong id="lf-surge">—</strong></div>
-        </article>
-        <div class="notice">Do not make safety decisions from this section. Check official guidance for any real event.</div>
-        <div id="districts-list" class="district-list"></div>
-      </section>
+      <!-- Row 2: Interactive Scrubber Slider -->
+      <div class="timeline-slider-row">
+        <label for="timeline-slider" class="sr-only">Scrub historical cyclone track</label>
+        <div class="slider-track-container">
+          <div id="slider-intensity-gradient" class="slider-intensity-gradient"></div>
+          <div id="slider-forecast-zone" class="slider-forecast-zone"></div>
+          <input id="timeline-slider" type="range" min="0" max="100" value="0" step="0.1" />
+        </div>
+      </div>
 
-      <section id="sources" class="view" aria-labelledby="sources-title" hidden>
-        <div class="section-heading"><p class="eyebrow">DATA SOURCES</p><h2 id="sources-title">What data is available?</h2><p>We show missing data clearly instead of filling it with demo values.</p></div>
-        <div id="pipeline-grid" class="source-grid" aria-live="polite"></div>
-        <p id="pipeline-next" class="next-step">Loading data collection status…</p>
-        <h3 class="subsection-title">Live product watch</h3>
-        <div id="live-grid" class="source-grid" aria-live="polite"></div>
-        <p id="live-next" class="next-step">Loading provider status…</p>
-      </section>
-    </main>
+      <!-- Row 3: Playback Controls Cluster -->
+      <div class="timeline-controls-row">
+        <div class="controls-left">
+          <button id="btn-sim-start" class="ctrl-btn" title="Jump to Genesis" aria-label="Jump to Genesis">⏮</button>
+          <button id="btn-sim-prev" class="ctrl-btn" title="Previous 6-Hour Step" aria-label="Previous 6-Hour Step">⏪</button>
+          <button id="btn-sim-play" class="ctrl-play-btn" title="Play / Pause Simulation" aria-label="Play / Pause Simulation">
+            <span id="play-icon" class="play-icon">▶</span>
+          </button>
+          <button id="btn-sim-next" class="ctrl-btn" title="Next 6-Hour Step" aria-label="Next 6-Hour Step">⏩</button>
+          <button id="btn-sim-end" class="ctrl-btn" title="Jump to Latest / Baseline Forecast" aria-label="Jump to Latest / Baseline Forecast">⏭</button>
+        </div>
 
-    <footer>SIH26070 · Cyclone Sentinel research prototype · Historical data is not an operational warning service.</footer>
+        <div class="controls-center">
+          <div class="speed-selector" role="group" aria-label="Simulation Playback Speed">
+            <span class="speed-label">SPEED:</span>
+            <button class="speed-btn" data-speed="0.5">0.5×</button>
+            <button class="speed-btn active" data-speed="1.0">1×</button>
+            <button class="speed-btn" data-speed="2.0">2×</button>
+            <button class="speed-btn" data-speed="4.0">4×</button>
+          </div>
+          <label class="loop-toggle" for="chk-sim-loop" title="Loop simulation playback">
+            <input id="chk-sim-loop" type="checkbox" checked />
+            <span class="loop-icon">🔁</span> Loop
+          </label>
+        </div>
 
+        <div class="controls-right">
+          <button id="btn-center-cyclone" class="ctrl-action-btn" title="Center camera on cyclone eye">
+            🎯 Center Cyclone
+          </button>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Right HUD: Map Controls & Layer Toggles Cluster -->
+    <div id="right-hud" class="right-hud" aria-label="Map Tools and Layers">
+      <div class="hud-tools-card">
+        <button id="btn-map-zoom-in" class="map-tool-btn" title="Zoom in" aria-label="Zoom in">+</button>
+        <button id="btn-map-zoom-out" class="map-tool-btn" title="Zoom out" aria-label="Zoom out">−</button>
+        <button id="btn-map-recenter" class="map-tool-btn" title="Center storm eye" aria-label="Center storm eye">🎯</button>
+        <button id="btn-map-reset-basin" class="map-tool-btn" title="North Indian Ocean basin view" aria-label="Reset basin view">🧭</button>
+      </div>
+
+      <!-- Layer Visibility Toggles -->
+      <div class="hud-layers-card" aria-label="Layer Visibility">
+        <button id="toggle-layer-swirl" class="layer-toggle-btn active" data-layer="swirl" title="Toggle Cyclone Cloud Simulation">
+          <span class="layer-icon">🌀</span><span class="layer-text">Swirl</span>
+        </button>
+        <button id="toggle-layer-track" class="layer-toggle-btn active" data-layer="track" title="Toggle Historical Track">
+          <span class="layer-icon">〰️</span><span class="layer-text">Track</span>
+        </button>
+        <button id="toggle-layer-cone" class="layer-toggle-btn active" data-layer="cone" title="Toggle Uncertainty Cone">
+          <span class="layer-icon">⚠️</span><span class="layer-text">Cone</span>
+        </button>
+        <button id="toggle-layer-radii" class="layer-toggle-btn active" data-layer="radii" title="Toggle Wind Radii Rings">
+          <span class="layer-icon">💨</span><span class="layer-text">Radii</span>
+        </button>
+        <button id="toggle-layer-borders" class="layer-toggle-btn active" data-layer="borders" title="Toggle Coastline & Borders">
+          <span class="layer-icon">🌐</span><span class="layer-text">Borders</span>
+        </button>
+        <button id="toggle-layer-all-storms" class="layer-toggle-btn" data-layer="allStorms" title="Display all 94 historical cyclone tracks across the basin">
+          <span class="layer-icon">🌪️</span><span class="layer-text">All Storms</span>
+        </button>
+      </div>
+
+      <!-- Collapsible IMD Intensity Legend -->
+      <div class="legend-card" id="legend-card">
+        <button id="btn-legend-toggle" class="legend-toggle" aria-expanded="true">
+          <span>IMD SCALE</span>
+          <span class="legend-chevron">▾</span>
+        </button>
+        <div class="legend-content" id="legend-content">
+          <div class="legend-item"><span class="legend-dot dot-super"></span><span>Super Cyclone (≥222 km/h)</span></div>
+          <div class="legend-item"><span class="legend-dot dot-escs"></span><span>Extremely Severe (166–221)</span></div>
+          <div class="legend-item"><span class="legend-dot dot-vscs"></span><span>Very Severe (118–165)</span></div>
+          <div class="legend-item"><span class="legend-dot dot-scs"></span><span>Severe CS (89–117)</span></div>
+          <div class="legend-item"><span class="legend-dot dot-cs"></span><span>Cyclonic Storm (62–88)</span></div>
+          <div class="legend-item"><span class="legend-dot dot-dd"></span><span>Deep Depression (52–61)</span></div>
+          <div class="legend-item"><span class="legend-dot dot-d"></span><span>Depression (31–51)</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Research Brief Modal -->
     <div id="bulletin-modal" class="modal-backdrop" hidden>
       <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <div class="modal-header"><div><p class="eyebrow">NON-OPERATIONAL RESEARCH OUTPUT</p><h2 id="modal-title">Historical replay brief</h2></div><button id="btn-close-modal" class="icon-button" aria-label="Close">×</button></div>
-        <div class="modal-actions"><button id="btn-copy-bulletin">Copy text</button><button id="btn-download-bulletin">Download text</button></div>
+        <div class="modal-header">
+          <div>
+            <p class="modal-eyebrow">NON-OPERATIONAL RESEARCH OUTPUT</p>
+            <h2 id="modal-title">Historical Replay Research Brief</h2>
+          </div>
+          <button id="btn-close-modal" class="icon-button" aria-label="Close">×</button>
+        </div>
+        <div class="modal-actions">
+          <button id="btn-copy-bulletin" class="modal-btn">📋 Copy Text</button>
+          <button id="btn-download-bulletin" class="modal-btn">📥 Download File</button>
+        </div>
         <pre id="bulletin-content">Loading research brief…</pre>
       </div>
     </div>
 
-    <script src="/static/app.js?v=1.4.2"></script>
+    <!-- Scripts: Vendored Leaflet and Main HUD Controller -->
+    <script src="/static/vendor/leaflet.js"></script>
+    <script src="/static/app.js?v=2.0.0"></script>
   </body>
 </html>

@@ -407,6 +407,24 @@ def latest_replay_id() -> str:
     return str(available[0]["id"])
 
 
+def list_all_storm_tracks() -> list[dict[str, Any]]:
+    """Return simplified tracks for all named storms for basin-wide exploration."""
+    results: list[dict[str, Any]] = []
+    for storm_id, track in load_tracks().items():
+        if not track or track[0].name == "UNNAMED":
+            continue
+        max_wind = max((obs.wind_knots or 0) for obs in track)
+        results.append({
+            "id": storm_id,
+            "name": f"Cyclone {track[0].name.title()}",
+            "season": track[0].season,
+            "peak_category": _classification(max_wind),
+            "peak_wind_kmph": round(max_wind * KNOTS_TO_KMPH),
+            "points": [[round(obs.latitude, 2), round(obs.longitude, 2)] for obs in track],
+        })
+    return results
+
+
 def replay(selector: str) -> dict[str, Any]:
     storm_id = resolve_storm_id(selector)
     track = load_tracks()[storm_id]
