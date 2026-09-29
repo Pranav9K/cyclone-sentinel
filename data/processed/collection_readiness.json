@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "generated_at_utc": "2026-09-28T14:13:58Z",
+  "credentials": {
+    "cds_configuration_present": false,
+    "earthdata_environment_present": false,
+    "earthdata_netrc_present": false
+  },
+  "dependencies": {
+    "cdsapi": false,
+    "numpy": false,
+    "h5py": false
+  },
+  "sources": [
+    {
+      "id": "era5",
+      "name": "ERA5 atmospheric context",
+      "status": "setup_required",
+      "raw_files": 0,
+      "feature_rows": 0,
+      "next_action": "Install cdsapi and configure a local CDS API credential file."
+    },
+    {
+      "id": "imerg",
+      "name": "GPM IMERG Final rainfall",
+      "status": "setup_required",
+      "raw_files": 0,
+      "feature_rows": 0,
+      "next_action": "Configure Earthdata access and install numpy plus h5py."
+    },
+    {
+      "id": "insat",
+      "name": "MOSDAC INSAT imagery",
+      "status": "registration_required",
+      "raw_files": 0,
+      "feature_rows": 0,
+      "next_action": "Register for authorised MOSDAC imagery access, then place files under data/raw/insat/."
+    }
+  ],
+  "next_action": "Install cdsapi and configure a local CDS API credential file.",
+  "safety_note": "This report contains setup booleans and file counts only; it never reads or exposes credentials."
+}

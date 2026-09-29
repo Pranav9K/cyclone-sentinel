@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "status": "ready",
+  "generated_at_utc": "2026-09-27T08:43:51Z",
+  "source": {
+    "provider": "MOSDAC / ISRO",
+    "feed_url": "https://mosdac.gov.in/3dimager.xml",
+    "product": "INSAT-3D Imager RSS metadata"
+  },
+  "items": [
+    {
+      "title": "3DIMG_L2P_VSW",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2P_VSW.gif",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2P_VSW.gif"
+    },
+    {
+      "title": "3DIMG_L2G_IMR",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0830_L2G_IMR.jpg",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0830_L2G_IMR.jpg"
+    },
+    {
+      "title": "3DIMG_L1C_SGP",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0830_L1C_SGP_IR1.jpg",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0830_L1C_SGP_IR1.jpg"
+    },
+    {
+      "title": "3DIMG_L1C_ASIA_MER",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L1C_ASIA_MER_IR1.jpg",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L1C_ASIA_MER_IR1.jpg"
+    },
+    {
+      "title": "3DIMG_L2G_AOD",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0830_L2G_AOD.jpg",
+      "published_at": "2022-08-23T09:16:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0830_L2G_AOD.jpg"
+    },
+    {
+      "title": "3DIMG_L2C_FOG",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0830_L2C_FOG.jpg",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0830_L2C_FOG.jpg"
+    },
+    {
+      "title": "3DIMG_L2B_CTP",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2B_CTP.jpg",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2B_CTP.jpg"
+    },
+    {
+      "title": "3DIMG_L2G_WDP",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2G_MIDSH.jpg",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2G_MIDSH.jpg"
+    },
+    {
+      "title": "3DIMG_L2B_LST",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2B_LST.jpg",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2B_LST.jpg"
+    },
+    {
+      "title": "3DIMG_L2B_IMC",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0730_L2B_IMC.jpg",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0730_L2B_IMC.jpg"
+    },
+    {
+      "title": "3DIMG_L2P_SMK",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2P_SMK.jpg",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2P_SMK.jpg"
+    },
+    {
+      "title": "3DIMG_L2C_FOG",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2C_FOG.jpg",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2C_FOG.jpg"
+    },
+    {
+      "title": "3DIMG_L2P_WVW",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2P_WVW.gif",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2P_WVW.gif"
+    },
+    {
+      "title": "3DIMG_L1C_SGP",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L1C_SGP_IR1.jpg",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L1C_SGP_IR1.jpg"
+    },
+    {
+      "title": "3DIMG_L2P_IRW",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2P_IRW.gif",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2P_IRW.gif"
+    },
+    {
+      "title": "3DIMG_L2P_IRW",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0830_L2P_IRW.gif",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0830_L2P_IRW.gif"
+    },
+    {
+      "title": "3DIMG_L2B_SST",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0830_L2B_SST.jpg",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0830_L2B_SST.jpg"
+    },
+    {
+      "title": "3DIMG_L2B_OLR",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2B_OLR.jpg",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2B_OLR.jpg"
+    },
+    {
+      "title": "3DIMG_L1B_STD",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0830_L1B_STD_IR1.jpg",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0830_L1B_STD_IR1.jpg"
+    },
+    {
+      "title": "3DIMG_L2P_VSW",
+      "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0830_L2P_VSW.gif",
+      "published_at": "2022-08-23T09:12:00Z",
+      "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0830_L2P_VSW.gif"
+    }
+  ],
+  "latest": {
+    "title": "3DIMG_L2P_VSW",
+    "link": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2P_VSW.gif",
+    "published_at": "2022-08-23T09:12:00Z",
+    "guid": "http://mosdac.gov.in/look/3D_IMG/preview/2022/23AUG/3DIMG_23AUG2022_0800_L2P_VSW.gif"
+  },
+  "note": "This manifest confirms published metadata, not a locally downloaded or decoded image."
+}

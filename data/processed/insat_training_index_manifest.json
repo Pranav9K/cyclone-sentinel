@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "status": "waiting_for_time_matched_images",
+  "generated_at_utc": "2026-09-28T13:11:07Z",
+  "catalog": "C:\\Users\\Pranav\\Files\\Code\\MachineLearning\\sih-qualifiers\\data\\processed\\insat_image_catalog.json",
+  "tracks": "C:\\Users\\Pranav\\Files\\Code\\MachineLearning\\sih-qualifiers\\data\\processed\\ibtracs_ni_tracks.csv",
+  "output": "C:\\Users\\Pranav\\Files\\Code\\MachineLearning\\sih-qualifiers\\data\\processed\\insat_training_index.csv",
+  "tolerance_minutes": 90,
+  "counts": {
+    "catalog_images": 0,
+    "without_capture_time": 0,
+    "outside_tolerance": 0,
+    "paired": 0
+  },
+  "limitations": [
+    "Labels come from the nearest historical IBTrACS timestamp, not from the satellite image itself.",
+    "This index does not prove that the image footprint contains the matched cyclone centre.",
+    "Do not use it as a real-time or operational satellite classification product."
+  ]
+}

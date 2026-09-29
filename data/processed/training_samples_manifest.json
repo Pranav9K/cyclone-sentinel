@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "status": "ready",
+  "generated_at_utc": "2026-09-26T11:59:18.555019+00:00",
+  "source": {
+    "path": "data/processed/ibtracs_ni_tracks.csv",
+    "sha256": "de4864d44f3210479a07de464a3c5a4a1f066ea8a20a09deb71ca7a6f396029c",
+    "rows_read": 9633
+  },
+  "configuration": {
+    "exact_horizon_hours": 24,
+    "allowed_statuses": [
+      "DS",
+      "TS"
+    ],
+    "split_strategy": "storm-disjoint chronological split by first usable input timestamp",
+    "train_fraction": 0.7,
+    "validation_fraction": 0.15,
+    "test_fraction": 0.15000000000000005
+  },
+  "quality": {
+    "validation_counts": {
+      "missing_pressure_measurement": 910,
+      "missing_wind_measurement": 883,
+      "rows_read": 9633,
+      "season_timestamp_mismatch": 58,
+      "status_not_allowed": 275,
+      "storms_with_valid_observations": 264,
+      "unique_valid_observations": 9358,
+      "valid_core_observations": 9358
+    },
+    "retained_status_counts": {
+      "DS": 940,
+      "TS": 8418
+    },
+    "sample_counts": {
+      "candidate_input_observations": 9358,
+      "emitted_samples": 6575,
+      "excluded_missing_input_wind": 465,
+      "excluded_missing_target_wind": 128,
+      "excluded_no_exact_horizon_target": 2190,
+      "storms_with_supervised_samples": 244,
+      "storms_without_supervised_samples": 20
+    }
+  },
+  "dataset": {
+    "path": "data/processed/training_samples.csv",
+    "records": 6575,
+    "columns": [
+      "sample_id",
+      "storm_id",
+      "input_timestamp_utc",
+      "season",
+      "input_year",
+      "input_month",
+      "input_day_of_year",
+      "input_hour_utc",
+      "latitude",
+      "longitude",
+      "wind_knots",
+      "pressure_hpa",
+      "status",
+      "previous_6h_available",
+      "previous_6h_delta_latitude",
+      "previous_6h_delta_longitude",
+      "previous_6h_wind_change_knots",
+      "target_timestamp_utc",
+      "target_interval_hours",
+      "target_latitude",
+      "target_longitude",
+      "target_delta_latitude_24h",
+      "target_delta_longitude_24h",
+      "target_wind_knots",
+      "target_wind_change_knots_24h",
+      "split"
+    ],
+    "feature_columns": [
+      "season",
+      "input_year",
+      "input_month",
+      "input_day_of_year",
+      "input_hour_utc",
+      "latitude",
+      "longitude",
+      "wind_knots",
+      "pressure_hpa",
+      "status",
+      "previous_6h_available",
+      "previous_6h_delta_latitude",
+      "previous_6h_delta_longitude",
+      "previous_6h_wind_change_knots"
+    ],
+    "target_columns": [
+      "target_delta_latitude_24h",
+      "target_delta_longitude_24h",
+      "target_wind_knots",
+      "target_wind_change_knots_24h"
+    ],
+    "split_summary": {
+      "train": {
+        "storms": 170,
+        "samples": 4725,
+        "first_input_timestamp_utc": "2000-03-27T12:00:00Z",
+        "last_input_timestamp_utc": "2019-09-25T06:00:00Z"
+      },
+      "validation": {
+        "storms": 36,
+        "samples": 928,
+        "first_input_timestamp_utc": "2019-09-29T12:00:00Z",
+        "last_input_timestamp_utc": "2022-10-24T00:00:00Z"
+      },
+      "test": {
+        "storms": 38,
+        "samples": 922,
+        "first_input_timestamp_utc": "2022-11-20T00:00:00Z",
+        "last_input_timestamp_utc": "2025-12-01T18:00:00Z"
+      }
+    },
+    "first_input_timestamp_utc": "2000-03-27T12:00:00Z",
+    "last_input_timestamp_utc": "2025-12-01T18:00:00Z"
+  },
+  "report_path": "data/processed/training_samples_report.md"
+}

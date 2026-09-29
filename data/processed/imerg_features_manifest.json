@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "status": "waiting_for_raw_imerg",
+  "source": "NASA GES DISC GPM IMERG Final V07 half-hourly HDF5",
+  "output": {
+    "path": "data/processed/imerg_features.csv",
+    "records_written": 504
+  },
+  "alignment": {
+    "event_keys_expected": 504,
+    "window_degrees": 2.5,
+    "causal_interval_policy": "completed half-hour intervals ending at or before issue time"
+  },
+  "coverage": {
+    "raw_files_discovered": 0,
+    "endpoint_features_available": 0,
+    "complete_24h_accumulations": 0
+  },
+  "errors": [],
+  "next_action": "Collect missing IMERG HDF5 files and rerun extraction."
+}

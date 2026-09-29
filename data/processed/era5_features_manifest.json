@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "status": "waiting_for_raw_era5",
+  "generated_at_utc": "2026-09-26T12:30:44.549172+00:00",
+  "dry_run": false,
+  "source": "Copernicus Climate Data Store ERA5 hourly single levels",
+  "contract": {
+    "output_csv_columns": [
+      "storm_id",
+      "timestamp_utc",
+      "era5_u10_mps",
+      "era5_v10_mps",
+      "era5_wind10_mps",
+      "era5_mslp_pa",
+      "era5_sst_k",
+      "era5_tcw_kg_m2",
+      "era5_dewpoint_k",
+      "era5_missing"
+    ],
+    "output_units": {
+      "era5_u10_mps": "m s-1",
+      "era5_v10_mps": "m s-1",
+      "era5_wind10_mps": "m s-1; sqrt(u10^2 + v10^2)",
+      "era5_mslp_pa": "Pa",
+      "era5_sst_k": "K",
+      "era5_tcw_kg_m2": "kg m-2",
+      "era5_dewpoint_k": "K",
+      "era5_missing": "0 for every emitted row"
+    },
+    "raw_csv_required_concepts": [
+      "timestamp_utc",
+      "latitude",
+      "longitude",
+      "u10",
+      "v10",
+      "mslp",
+      "sst",
+      "tcw",
+      "dewpoint"
+    ],
+    "raw_csv_aliases": {
+      "timestamp_utc": [
+        "timestamp_utc",
+        "valid_time",
+        "time",
+        "datetime",
+        "date_time"
+      ],
+      "latitude": [
+        "latitude",
+        "lat"
+      ],
+      "longitude": [
+        "longitude",
+        "lon",
+        "lng"
+      ],
+      "u10": [
+        "u10",
+        "u10_mps",
+        "10m_u_component_of_wind",
+        "10m_u_component_of_wind_m_s"
+      ],
+      "v10": [
+        "v10",
+        "v10_mps",
+        "10m_v_component_of_wind",
+        "10m_v_component_of_wind_m_s"
+      ],
+      "mslp": [
+        "msl",
+        "mslp",
+        "mslp_pa",
+        "mean_sea_level_pressure"
+      ],
+      "sst": [
+        "sst",
+        "sst_k",
+        "sea_surface_temperature"
+      ],
+      "tcw": [
+        "tcwv",
+        "tcw",
+        "tcw_kg_m2",
+        "total_column_water_vapour"
+      ],
+      "dewpoint": [
+        "d2m",
+        "dewpoint",
+        "dewpoint_k",
+        "2m_dewpoint_temperature"
+      ],
+      "storm_id": [
+        "storm_id",
+        "sid",
+        "storm"
+      ]
+    },
+    "selection": "nearest grid point to the IBTrACS centre at the exact planned UTC time",
+    "missing_data_behavior": "Only fully valid, spatially matched source rows are emitted. Missing, invalid, or unmatched event keys are omitted; the downstream left join must treat an absent key as unavailable. If no raw ERA5 source is readable, the CSV contains only its header."
+  },
+  "inputs": {
+    "collection_plan": {
+      "path": "data/processed/multisource_collection_plan.json",
+      "sha256": "376ad5646385cdfdb4bda4153084b88a38c20c8d03be322591170f92e2b43cbe"
+    },
+    "tracks": {
+      "path": "data/processed/ibtracs_ni_tracks.csv",
+      "sha256": "de4864d44f3210479a07de464a3c5a4a1f066ea8a20a09deb71ca7a6f396029c"
+    },
+    "raw_era5_directory": "data/raw/era5",
+    "raw_files_discovered": 0,
+    "raw_files": []
+  },
+  "alignment": {
+    "event_keys_expected": 504,
+    "event_keys_by_storm": {
+      "2019116N02090": 71,
+      "2020136N10088": 51,
+      "2021133N10071": 49,
+      "2021143N15090": 39,
+      "2022126N07095": 63,
+      "2022295N13093": 27,
+      "2023129N08091": 51,
+      "2023156N10067": 113,
+      "2024145N14087": 40
+    },
+    "event_keys_without_track_position": 0,
+    "missing_track_position_examples": [],
+    "time_tolerance_minutes": 0,
+    "max_grid_distance_km": 100.0
+  },
+  "output": {
+    "path": "data/processed/era5_features.csv",
+    "records_written": 0,
+    "unresolved_event_keys": 504,
+    "resolved_by_storm": {},
+    "selected_grid_distance_km": {
+      "minimum": null,
+      "maximum": null,
+      "mean": null
+    }
+  },
+  "quality_counts": {},
+  "next_action": "Run scripts/collect_era5.py after configuring CDS, then run this extractor again."
+}

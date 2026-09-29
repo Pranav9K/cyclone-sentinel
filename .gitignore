@@ -3,4 +3,5 @@ __pycache__/
 *.py[cod]
 .env
 data/raw/
-data/processed/
+data/processed/imerg_manifest.json
+data/processed/training_samples.csv
