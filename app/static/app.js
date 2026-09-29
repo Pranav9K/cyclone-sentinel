@@ -118,6 +118,9 @@
       maxZoom: 14,
       zoomControl: false, // Using custom HUD zoom buttons
       attributionControl: false,
+      worldCopyJump: true,
+      maxBounds: L.latLngBounds(L.latLng(-65, -720), L.latLng(75, 720)),
+      maxBoundsViscosity: 0.85,
     });
 
     // Basemap Providers (100% Free, High Resolution, No API Key Required)
@@ -167,6 +170,10 @@
     // Map Event Listeners
     map.on('move moveend zoom zoomend viewreset resize', () => {
       syncCanvasSize();
+      const state = getInterpolatedState();
+      if (state && Number.isFinite(state.lat) && Number.isFinite(state.lon)) {
+        updateCycloneMarker(state.lat, state.lon, currentStorm?.name || 'Cyclone');
+      }
       renderCycloneCanvas();
     });
   }
@@ -243,42 +250,7 @@
     };
   }
 
-  function renderCycloneCanvas() {
-    if (!ctx || !canvas || !map) return;
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    ctx.clearRect(0, 0, width, height);
-
-    if (!layerVisibility.swirl || !timelineSequence.length) return;
-
-    const state = getInterpolatedState();
-    if (!state || !Number.isFinite(state.lat) || !Number.isFinite(state.lon)) return;
-
-    const centerPoint = map.latLngToContainerPoint([state.lat, state.lon]);
-    const cx = centerPoint.x;
-    const cy = centerPoint.y;
-
-    // Calculate physical radius in screen pixels based on map zoom
-    const zoom = map.getZoom();
-    const windSpeed = state.wind_kmph || 60;
-    const intensity = Math.min(1.0, Math.max(0.15, (windSpeed - 30) / 190));
-
-    // Base storm cloud radius in km (approx 250 - 450 km)
-    const stormRadiusKm = 240 + intensity * 180;
-    // Conversion factor km to pixels at current latitude and zoom
-    const kmPerPixel = (40075 * Math.cos(state.lat * Math.PI / 180)) / Math.pow(2, zoom + 8);
-    const pixelRadius = Math.max(70, Math.min(750, stormRadiusKm / kmPerPixel));
-
-    // Only render if visible on or near screen
-    if (cx + pixelRadius < -100 || cx - pixelRadius > width + 100 ||
-        cy + pixelRadius < -100 || cy - pixelRadius > height + 100) {
-      return;
-    }
-
-    // Eye radius in pixels
-    const hasDefinedEye = windSpeed >= 90;
-    const eyeRadius = Math.max(6, Math.min(42, (hasDefinedEye ? 14 + intensity * 16 : 8) / (kmPerPixel * 0.4)));
-
+  function drawProceduralVortex(cx, cy, pixelRadius, eyeRadius, hasDefinedEye, intensity) {
     ctx.save();
 
     // 1. Atmospheric Low-Pressure Depressive Aura
@@ -408,6 +380,57 @@
     }
 
     ctx.restore();
+  }
+
+  function renderCycloneCanvas() {
+    if (!ctx || !canvas || !map) return;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    ctx.clearRect(0, 0, width, height);
+
+    if (!layerVisibility.swirl || !timelineSequence.length) return;
+
+    const state = getInterpolatedState();
+    if (!state || !Number.isFinite(state.lat) || !Number.isFinite(state.lon)) return;
+
+    // Calculate physical radius in screen pixels based on map zoom
+    const zoom = map.getZoom();
+    const windSpeed = state.wind_kmph || 60;
+    const intensity = Math.min(1.0, Math.max(0.15, (windSpeed - 30) / 190));
+
+    // Base storm cloud radius in km (approx 240 - 450 km)
+    const stormRadiusKm = 240 + intensity * 180;
+    // Conversion factor km to pixels at current latitude and zoom
+    const kmPerPixel = (40075 * Math.cos(state.lat * Math.PI / 180)) / Math.pow(2, zoom + 8);
+    const pixelRadius = Math.max(70, Math.min(750, stormRadiusKm / kmPerPixel));
+
+    // Eye radius in pixels
+    const hasDefinedEye = windSpeed >= 90;
+    const eyeRadius = Math.max(6, Math.min(42, (hasDefinedEye ? 14 + intensity * 16 : 8) / (kmPerPixel * 0.4)));
+
+    // Calculate dynamic offsets relative to current viewport center longitude
+    // Guarantees procedural swirl renders on any world copy the user pans to
+    const centerLng = map.getCenter().lng;
+    const baseK = Math.round((centerLng - state.lon) / 360);
+    const offsets = [
+      (baseK - 1) * 360,
+      baseK * 360,
+      (baseK + 1) * 360
+    ];
+
+    for (const offset of offsets) {
+      const centerPoint = map.latLngToContainerPoint([state.lat, state.lon + offset]);
+      const cx = centerPoint.x;
+      const cy = centerPoint.y;
+
+      // Only render if visible on or near screen
+      if (cx + pixelRadius < -100 || cx - pixelRadius > width + 100 ||
+          cy + pixelRadius < -100 || cy - pixelRadius > height + 100) {
+        continue;
+      }
+
+      drawProceduralVortex(cx, cy, pixelRadius, eyeRadius, hasDefinedEye, intensity);
+    }
   }
 
   function animationLoop(timestamp) {
@@ -598,8 +621,14 @@
   // 4. VECTOR LAYERS: TRACKS, WAYPOINTS, CONE & ASYMMETRIC RADII
   // ==========================================================================
 
+  const WORLD_OFFSETS = [-720, -360, 0, 360, 720];
+
   function updateCycloneMarker(lat, lon, label) {
     if (!map || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+    // Anchor cyclone center HUD marker to the world copy closest to the viewport center
+    const centerLng = map.getCenter().lng;
+    const wrappedLon = lon + Math.round((centerLng - lon) / 360) * 360;
 
     if (!cycloneCenterMarker) {
       const icon = L.divIcon({
@@ -612,9 +641,9 @@
         iconSize: [20, 20],
         iconAnchor: [10, 10],
       });
-      cycloneCenterMarker = L.marker([lat, lon], { icon, zIndexOffset: 1000 }).addTo(map);
+      cycloneCenterMarker = L.marker([lat, wrappedLon], { icon, zIndexOffset: 1000 }).addTo(map);
     } else {
-      cycloneCenterMarker.setLatLng([lat, lon]);
+      cycloneCenterMarker.setLatLng([lat, wrappedLon]);
       const labelEl = document.getElementById('marker-storm-label');
       if (labelEl) labelEl.textContent = label;
     }
@@ -633,119 +662,125 @@
     const forecast = storm.forecast_track || [];
     const current = storm.current || {};
 
-    // 1. Observed Best-Track Polyline & Waypoints
-    if (layerVisibility.track && observed.length > 0) {
-      const latLngs = observed.map(pt => [pt.lat, pt.lon]);
+    WORLD_OFFSETS.forEach(offset => {
+      // 1. Observed Best-Track Polyline & Waypoints
+      if (layerVisibility.track && observed.length > 0) {
+        const latLngs = observed.map(pt => [pt.lat, pt.lon + offset]);
 
-      // Glowing Main Track Line
-      L.polyline(latLngs, {
-        color: '#10b981',
-        weight: 3.5,
-        opacity: 0.9,
-      }).addTo(trackLayerGroup);
-
-      // Waypoint Dots
-      observed.forEach((pt, idx) => {
-        const isLatest = idx === observed.length - 1;
-        const radius = isLatest ? 6 : 4;
-        const color = getCategoryColor(pt.stage);
-
-        const circle = L.circleMarker([pt.lat, pt.lon], {
-          radius,
-          fillColor: color,
-          color: '#ffffff',
-          weight: 1.5,
-          fillOpacity: 1,
+        // Glowing Main Track Line
+        L.polyline(latLngs, {
+          color: '#10b981',
+          weight: 3.5,
+          opacity: 0.9,
         }).addTo(trackLayerGroup);
 
-        circle.bindTooltip(`
-          <div style="font-family: var(--font-main); font-size: 11px;">
-            <strong style="color: ${color};">${escapeHtml(storm.name)}</strong><br/>
-            <span>${formatTimeUtc(pt.time)}</span><br/>
-            <span>Wind: <b>${number(pt.wind_kmph)} km/h</b> · ${number(pt.pressure_hpa)} hPa</span><br/>
-            <small style="color: #94a9c4;">${escapeHtml(pt.stage)}</small>
-          </div>
-        `, { sticky: true, opacity: 0.95 });
+        // Waypoint Dots
+        observed.forEach((pt, idx) => {
+          const isLatest = idx === observed.length - 1;
+          const radius = isLatest ? 6 : 4;
+          const color = getCategoryColor(pt.stage);
 
-        circle.on('click', () => {
-          pauseSimulation();
-          simIndex = idx;
-          updateSimulationUI();
+          const circle = L.circleMarker([pt.lat, pt.lon + offset], {
+            radius,
+            fillColor: color,
+            color: '#ffffff',
+            weight: 1.5,
+            fillOpacity: 1,
+          }).addTo(trackLayerGroup);
+
+          circle.bindTooltip(`
+            <div style="font-family: var(--font-main); font-size: 11px;">
+              <strong style="color: ${color};">${escapeHtml(storm.name)}</strong><br/>
+              <span>${formatTimeUtc(pt.time)}</span><br/>
+              <span>Wind: <b>${number(pt.wind_kmph)} km/h</b> · ${number(pt.pressure_hpa)} hPa</span><br/>
+              <small style="color: #94a9c4;">${escapeHtml(pt.stage)}</small>
+            </div>
+          `, { sticky: true, opacity: 0.95 });
+
+          circle.on('click', () => {
+            pauseSimulation();
+            simIndex = idx;
+            updateSimulationUI();
+          });
         });
-      });
-    }
+      }
 
-    // 2. Forecast Baseline Polyline
-    if (layerVisibility.track && forecast.length > 0 && observed.length > 0) {
-      const lastObs = observed[observed.length - 1];
-      const forecastLatLngs = [[lastObs.lat, lastObs.lon], ...forecast.map(pt => [pt.lat, pt.lon])];
+      // 2. Forecast Baseline Polyline
+      if (layerVisibility.track && forecast.length > 0 && observed.length > 0) {
+        const lastObs = observed[observed.length - 1];
+        const forecastLatLngs = [
+          [lastObs.lat, lastObs.lon + offset],
+          ...forecast.map(pt => [pt.lat, pt.lon + offset])
+        ];
 
-      L.polyline(forecastLatLngs, {
-        color: '#38bdf8',
-        weight: 3,
-        dashArray: '6, 6',
-        opacity: 0.85,
-      }).addTo(forecastLayerGroup);
-
-      forecast.forEach((pt, idx) => {
-        const circle = L.circleMarker([pt.lat, pt.lon], {
-          radius: 5,
-          fillColor: '#38bdf8',
-          color: '#ffffff',
-          weight: 1.5,
-          fillOpacity: 1,
+        L.polyline(forecastLatLngs, {
+          color: '#38bdf8',
+          weight: 3,
+          dashArray: '6, 6',
+          opacity: 0.85,
         }).addTo(forecastLayerGroup);
 
-        circle.bindTooltip(`
-          <div style="font-family: var(--font-main); font-size: 11px;">
-            <strong style="color: #38bdf8;">+${pt.hours}h Research Baseline</strong><br/>
-            <span>${formatTimeUtc(pt.time)}</span><br/>
-            <span>Wind: <b>${number(pt.wind_kmph)} km/h</b></span><br/>
-            <span>Uncertainty Radius: ±${number(pt.radius_km)} km</span>
-          </div>
-        `, { sticky: true });
+        forecast.forEach((pt, idx) => {
+          const circle = L.circleMarker([pt.lat, pt.lon + offset], {
+            radius: 5,
+            fillColor: '#38bdf8',
+            color: '#ffffff',
+            weight: 1.5,
+            fillOpacity: 1,
+          }).addTo(forecastLayerGroup);
 
-        circle.on('click', () => {
-          pauseSimulation();
-          simIndex = observed.length + idx;
-          updateSimulationUI();
+          circle.bindTooltip(`
+            <div style="font-family: var(--font-main); font-size: 11px;">
+              <strong style="color: #38bdf8;">+${pt.hours}h Research Baseline</strong><br/>
+              <span>${formatTimeUtc(pt.time)}</span><br/>
+              <span>Wind: <b>${number(pt.wind_kmph)} km/h</b></span><br/>
+              <span>Uncertainty Radius: ±${number(pt.radius_km)} km</span>
+            </div>
+          `, { sticky: true });
+
+          circle.on('click', () => {
+            pauseSimulation();
+            simIndex = observed.length + idx;
+            updateSimulationUI();
+          });
         });
-      });
-    }
+      }
 
-    // 3. Held-out Error Uncertainty Cone Polygon
-    if (layerVisibility.cone && (storm.cone_polygon || []).length > 2) {
-      L.polygon(storm.cone_polygon, {
-        color: '#38bdf8',
-        weight: 1.5,
-        dashArray: '4, 4',
-        fillColor: '#38bdf8',
-        fillOpacity: 0.12,
-      }).addTo(coneLayerGroup);
-    }
-
-    // 4. Asymmetric Wind Radii Extents
-    if (layerVisibility.radii && current && Number.isFinite(current.lat) && Number.isFinite(current.lon)) {
-      const radii = current.wind_radii || {};
-
-      const drawQuadrantRings = (quadrants, color, label) => {
-        if (!quadrants) return;
-        const avgKm = (quadrants.ne + quadrants.se + quadrants.sw + quadrants.nw) / 4;
-        if (!avgKm || avgKm <= 0) return;
-
-        L.circle([current.lat, current.lon], {
-          radius: avgKm * 1000,
-          color,
+      // 3. Held-out Error Uncertainty Cone Polygon
+      if (layerVisibility.cone && (storm.cone_polygon || []).length > 2) {
+        const offsetCone = storm.cone_polygon.map(([lat, lon]) => [lat, lon + offset]);
+        L.polygon(offsetCone, {
+          color: '#38bdf8',
           weight: 1.5,
-          fillColor: color,
-          fillOpacity: 0.08,
-        }).bindTooltip(`${label}: ~${Math.round(avgKm)} km extent`, { sticky: true }).addTo(radiiLayerGroup);
-      };
+          dashArray: '4, 4',
+          fillColor: '#38bdf8',
+          fillOpacity: 0.12,
+        }).addTo(coneLayerGroup);
+      }
 
-      drawQuadrantRings(radii.r34_km, '#facc15', '34 kt Gale Wind');
-      drawQuadrantRings(radii.r50_km, '#fb923c', '50 kt Storm Wind');
-      drawQuadrantRings(radii.r64_km, '#f87171', '64 kt Hurricane Wind');
-    }
+      // 4. Asymmetric Wind Radii Extents
+      if (layerVisibility.radii && current && Number.isFinite(current.lat) && Number.isFinite(current.lon)) {
+        const radii = current.wind_radii || {};
+
+        const drawQuadrantRings = (quadrants, color, label) => {
+          if (!quadrants) return;
+          const avgKm = (quadrants.ne + quadrants.se + quadrants.sw + quadrants.nw) / 4;
+          if (!avgKm || avgKm <= 0) return;
+
+          L.circle([current.lat, current.lon + offset], {
+            radius: avgKm * 1000,
+            color,
+            weight: 1.5,
+            fillColor: color,
+            fillOpacity: 0.08,
+          }).bindTooltip(`${label}: ~${Math.round(avgKm)} km extent`, { sticky: true }).addTo(radiiLayerGroup);
+        };
+
+        drawQuadrantRings(radii.r34_km, '#facc15', '34 kt Gale Wind');
+        drawQuadrantRings(radii.r50_km, '#fb923c', '50 kt Storm Wind');
+        drawQuadrantRings(radii.r64_km, '#f87171', '64 kt Hurricane Wind');
+      }
+    });
   }
 
   // ==========================================================================
@@ -765,33 +800,35 @@
   }
 
   function toggleAllStormsLayer(show) {
-    layerVisibility.allStorms = show;
     allStormsLayerGroup.clearLayers();
 
     if (!show) return;
 
-    basinAllStorms.forEach(s => {
-      if (!s.points || s.points.length < 2) return;
-      const isSelected = s.id === currentStorm?.id;
-      const color = isSelected ? '#ffffff' : getCategoryColor(s.peak_category);
+    WORLD_OFFSETS.forEach(offset => {
+      basinAllStorms.forEach(s => {
+        if (!s.points || s.points.length < 2) return;
+        const isSelected = s.id === currentStorm?.id;
+        const color = isSelected ? '#ffffff' : getCategoryColor(s.peak_category);
 
-      const line = L.polyline(s.points, {
-        color,
-        weight: isSelected ? 4 : 2,
-        opacity: isSelected ? 1 : 0.45,
-      }).addTo(allStormsLayerGroup);
+        const offsetPoints = s.points.map(([lat, lon]) => [lat, lon + offset]);
+        const line = L.polyline(offsetPoints, {
+          color,
+          weight: isSelected ? 4 : 2,
+          opacity: isSelected ? 1 : 0.45,
+        }).addTo(allStormsLayerGroup);
 
-      line.bindTooltip(`
-        <div style="font-family: var(--font-main); font-size: 11px;">
-          <strong style="color: ${color};">${escapeHtml(s.name)} (${escapeHtml(s.season)})</strong><br/>
-          <span>Peak: <b>${escapeHtml(s.peak_category)}</b></span><br/>
-          <span>Max Wind: ${number(s.peak_wind_kmph)} km/h</span><br/>
-          <small style="color: var(--accent-cyan);">Click to simulate</small>
-        </div>
-      `, { sticky: true });
+        line.bindTooltip(`
+          <div style="font-family: var(--font-main); font-size: 11px;">
+            <strong style="color: ${color};">${escapeHtml(s.name)} (${escapeHtml(s.season)})</strong><br/>
+            <span>Peak: <b>${escapeHtml(s.peak_category)}</b></span><br/>
+            <span>Max Wind: ${number(s.peak_wind_kmph)} km/h</span><br/>
+            <small style="color: var(--accent-cyan);">Click to simulate</small>
+          </div>
+        `, { sticky: true });
 
-      line.on('click', () => {
-        loadStorm(s.id);
+        line.on('click', () => {
+          loadStorm(s.id);
+        });
       });
     });
   }
@@ -1139,7 +1176,9 @@
       const observed = currentStorm.observed_track || [];
       const targetPoint = observed[observed.length - 1] || currentStorm.current;
       if (targetPoint && Number.isFinite(targetPoint.lat) && Number.isFinite(targetPoint.lon) && map) {
-        map.flyTo([targetPoint.lat, targetPoint.lon], 6, {
+        const centerLng = map.getCenter().lng;
+        const wrappedLon = targetPoint.lon + Math.round((centerLng - targetPoint.lon) / 360) * 360;
+        map.flyTo([targetPoint.lat, wrappedLon], 6, {
           animate: true,
           duration: 1.2
         });
@@ -1260,7 +1299,9 @@
     const recenterAction = () => {
       const state = getInterpolatedState();
       if (state && map) {
-        map.flyTo([state.lat, state.lon], Math.max(6, map.getZoom()), { animate: true, duration: 0.8 });
+        const centerLng = map.getCenter().lng;
+        const wrappedLon = state.lon + Math.round((centerLng - state.lon) / 360) * 360;
+        map.flyTo([state.lat, wrappedLon], Math.max(6, map.getZoom()), { animate: true, duration: 0.8 });
       }
     };
     document.getElementById('btn-map-recenter')?.addEventListener('click', recenterAction);
