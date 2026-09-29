@@ -118,8 +118,8 @@
       maxZoom: 14,
       zoomControl: false, // Using custom HUD zoom buttons
       attributionControl: false,
-      worldCopyJump: true,
-      maxBounds: L.latLngBounds(L.latLng(-65, -720), L.latLng(75, 720)),
+      worldCopyJump: false,
+      maxBounds: L.latLngBounds(L.latLng(-70, -100000), L.latLng(75, 100000)),
       maxBoundsViscosity: 0.85,
     });
 
@@ -173,6 +173,16 @@
       const state = getInterpolatedState();
       if (state && Number.isFinite(state.lat) && Number.isFinite(state.lon)) {
         updateCycloneMarker(state.lat, state.lon, currentStorm?.name || 'Cyclone');
+
+        // Dynamically update vector layers when user scrolls into an adjacent world copy
+        const centerLng = map.getCenter().lng;
+        const currentK = Math.round((centerLng - state.lon) / 360);
+        if (currentK !== lastRenderedK && currentStorm) {
+          renderVectorLayers(currentStorm, currentK);
+          if (layerVisibility.allStorms) {
+            toggleAllStormsLayer(true, currentK);
+          }
+        }
       }
       renderCycloneCanvas();
     });
@@ -621,7 +631,8 @@
   // 4. VECTOR LAYERS: TRACKS, WAYPOINTS, CONE & ASYMMETRIC RADII
   // ==========================================================================
 
-  const WORLD_OFFSETS = [-720, -360, 0, 360, 720];
+  let lastRenderedK = 0;
+  let lastAllStormsK = 0;
 
   function updateCycloneMarker(lat, lon, label) {
     if (!map || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
@@ -649,8 +660,17 @@
     }
   }
 
-  function renderVectorLayers(storm) {
-    if (!map) return;
+  function renderVectorLayers(storm, centerK = null) {
+    if (!map || !storm) return;
+
+    const observed = storm.observed_track || [];
+    const forecast = storm.forecast_track || [];
+    const current = storm.current || {};
+
+    const baseLon = (observed[0]?.lon) || (current?.lon) || 84.5;
+    const centerLng = map.getCenter().lng;
+    const k = centerK !== null ? centerK : Math.round((centerLng - baseLon) / 360);
+    lastRenderedK = k;
 
     // Clear previous vector layers
     trackLayerGroup.clearLayers();
@@ -658,20 +678,24 @@
     coneLayerGroup.clearLayers();
     radiiLayerGroup.clearLayers();
 
-    const observed = storm.observed_track || [];
-    const forecast = storm.forecast_track || [];
-    const current = storm.current || {};
+    // Render on the current world copy, as well as adjacent copies
+    const offsets = [
+      (k - 1) * 360,
+      k * 360,
+      (k + 1) * 360
+    ];
 
-    WORLD_OFFSETS.forEach(offset => {
+    offsets.forEach(offset => {
       // 1. Observed Best-Track Polyline & Waypoints
       if (layerVisibility.track && observed.length > 0) {
         const latLngs = observed.map(pt => [pt.lat, pt.lon + offset]);
 
-        // Glowing Main Track Line
+        // Glowing Main Track Line (noClip: true prevents Leaflet SVG viewport culling)
         L.polyline(latLngs, {
           color: '#10b981',
           weight: 3.5,
           opacity: 0.9,
+          noClip: true,
         }).addTo(trackLayerGroup);
 
         // Waypoint Dots
@@ -687,6 +711,9 @@
             weight: 1.5,
             fillOpacity: 1,
           }).addTo(trackLayerGroup);
+
+          // Ensure Leaflet SVG renderer does not cull circle markers
+          circle._empty = () => false;
 
           circle.bindTooltip(`
             <div style="font-family: var(--font-main); font-size: 11px;">
@@ -718,6 +745,7 @@
           weight: 3,
           dashArray: '6, 6',
           opacity: 0.85,
+          noClip: true,
         }).addTo(forecastLayerGroup);
 
         forecast.forEach((pt, idx) => {
@@ -728,6 +756,8 @@
             weight: 1.5,
             fillOpacity: 1,
           }).addTo(forecastLayerGroup);
+
+          circle._empty = () => false;
 
           circle.bindTooltip(`
             <div style="font-family: var(--font-main); font-size: 11px;">
@@ -755,6 +785,7 @@
           dashArray: '4, 4',
           fillColor: '#38bdf8',
           fillOpacity: 0.12,
+          noClip: true,
         }).addTo(coneLayerGroup);
       }
 
@@ -767,13 +798,15 @@
           const avgKm = (quadrants.ne + quadrants.se + quadrants.sw + quadrants.nw) / 4;
           if (!avgKm || avgKm <= 0) return;
 
-          L.circle([current.lat, current.lon + offset], {
+          const ring = L.circle([current.lat, current.lon + offset], {
             radius: avgKm * 1000,
             color,
             weight: 1.5,
             fillColor: color,
             fillOpacity: 0.08,
-          }).bindTooltip(`${label}: ~${Math.round(avgKm)} km extent`, { sticky: true }).addTo(radiiLayerGroup);
+          });
+          ring._empty = () => false;
+          ring.bindTooltip(`${label}: ~${Math.round(avgKm)} km extent`, { sticky: true }).addTo(radiiLayerGroup);
         };
 
         drawQuadrantRings(radii.r34_km, '#facc15', '34 kt Gale Wind');
@@ -799,12 +832,22 @@
     }
   }
 
-  function toggleAllStormsLayer(show) {
+  function toggleAllStormsLayer(show, centerK = null) {
     allStormsLayerGroup.clearLayers();
 
     if (!show) return;
 
-    WORLD_OFFSETS.forEach(offset => {
+    const centerLng = map ? map.getCenter().lng : 84.5;
+    const k = centerK !== null ? centerK : Math.round((centerLng - 84.5) / 360);
+    lastAllStormsK = k;
+
+    const offsets = [
+      (k - 1) * 360,
+      k * 360,
+      (k + 1) * 360
+    ];
+
+    offsets.forEach(offset => {
       basinAllStorms.forEach(s => {
         if (!s.points || s.points.length < 2) return;
         const isSelected = s.id === currentStorm?.id;
@@ -815,6 +858,7 @@
           color,
           weight: isSelected ? 4 : 2,
           opacity: isSelected ? 1 : 0.45,
+          noClip: true,
         }).addTo(allStormsLayerGroup);
 
         line.bindTooltip(`
