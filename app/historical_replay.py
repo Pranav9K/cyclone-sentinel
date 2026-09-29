@@ -1,12 +1,7 @@
 """Serve transparent historical replays backed by collected IBTrACS data.
 
-Enriched with:
-1. IMD Dvorak cloud pattern classification and T-number regression
-2. Rapid Intensification (RI) early warning risk assessment
-3. Coastal landfall intersection, storm surge calculation, and district exposure
-4. Asymmetric quadrant wind radii (34 kt, 50 kt, 64 kt)
-5. Calibrated 70% probability cone of uncertainty polygon
-6. Official RSMC New Delhi format advisory bulletin generation
+Supplementary visual modules are explicitly labelled research proxies until
+real satellite and environmental sources are connected.
 """
 
 from __future__ import annotations
@@ -20,7 +15,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from app.bulletin_generator import generate_imd_bulletin
+from app.bulletin_generator import generate_research_brief
 from app.dvorak_engine import classify_pattern
 from app.landfall_impact_engine import evaluate_landfall_and_impact
 from app.ri_engine import evaluate_rapid_intensification
@@ -29,6 +24,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TRACKS_PATH = PROJECT_ROOT / "data" / "processed" / "ibtracs_ni_tracks.csv"
 MODEL_PATH = PROJECT_ROOT / "data" / "processed" / "baseline_model.json"
 METRICS_PATH = PROJECT_ROOT / "data" / "processed" / "baseline_metrics.json"
+ERA5_FEATURES_PATH = PROJECT_ROOT / "data" / "processed" / "era5_features.csv"
+IMERG_FEATURES_PATH = PROJECT_ROOT / "data" / "processed" / "imerg_features.csv"
 KNOTS_TO_KMPH = 1.852
 
 
@@ -46,7 +43,8 @@ class Observation:
 
 def _optional_float(value: str | None) -> float | None:
     try:
-        return float(value) if value not in (None, "") else None
+        parsed = float(value) if value not in (None, "") else None
+        return parsed if parsed is None or math.isfinite(parsed) else None
     except ValueError:
         return None
 
@@ -103,6 +101,54 @@ def load_metrics() -> dict[str, Any]:
     if not METRICS_PATH.exists():
         return {}
     return json.loads(METRICS_PATH.read_text(encoding="utf-8"))
+
+
+def _load_feature_rows(path: Path, source_prefix: str) -> dict[tuple[str, str], dict[str, str]]:
+    """Read an optional extracted feature table without treating absent data as zero."""
+    if not path.exists():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8", newline="") as source:
+            reader = csv.DictReader(source)
+            fields = set(reader.fieldnames or [])
+            if {"storm_id", "timestamp_utc", f"{source_prefix}_missing"} - fields:
+                return {}
+            records: dict[tuple[str, str], dict[str, str]] = {}
+            for row in reader:
+                storm_id = (row.get("storm_id") or "").strip()
+                timestamp = (row.get("timestamp_utc") or "").strip()
+                if storm_id and timestamp:
+                    records[(storm_id, timestamp)] = row
+            return records
+    except OSError:
+        return {}
+
+
+@lru_cache(maxsize=1)
+def load_era5_features() -> dict[tuple[str, str], dict[str, str]]:
+    return _load_feature_rows(ERA5_FEATURES_PATH, "era5")
+
+
+@lru_cache(maxsize=1)
+def load_imerg_features() -> dict[tuple[str, str], dict[str, str]]:
+    return _load_feature_rows(IMERG_FEATURES_PATH, "imerg")
+
+
+def _source_features(storm_id: str, timestamp: datetime) -> dict[str, Any]:
+    """Return only source values that are present in a matching extracted row."""
+    key = (storm_id, timestamp.isoformat().replace("+00:00", "Z"))
+    era5 = load_era5_features().get(key)
+    imerg = load_imerg_features().get(key)
+    era5_available = bool(era5) and str(era5.get("era5_missing", "1")).strip().lower() not in {"1", "true", "yes"}
+    imerg_available = bool(imerg) and str(imerg.get("imerg_missing", "1")).strip().lower() not in {"1", "true", "yes"}
+    sst_k = _optional_float(era5.get("era5_sst_k") if era5_available and era5 else None)
+    rainfall = _optional_float(imerg.get("imerg_center_precipitation_cal_mm_hr") if imerg_available and imerg else None)
+    return {
+        "era5_available": era5_available,
+        "imerg_available": imerg_available,
+        "era5_sst_celsius": round(sst_k - 273.15, 2) if sst_k is not None else None,
+        "imerg_center_precipitation_mm_hr": rainfall,
+    }
 
 
 def data_ready() -> bool:
@@ -194,7 +240,7 @@ def _calculate_asymmetric_wind_radii(wind_knots: float | None) -> dict[str, dict
 def _calculate_cone_polygon(
     origin_lat: float, origin_lon: float, forecast_track: list[dict[str, Any]]
 ) -> list[list[float]]:
-    """Compute the 70% probability cone of uncertainty envelope polygon coordinates."""
+    """Compute an error-scaled visual envelope from held-out baseline error."""
     if not forecast_track:
         return []
 
@@ -371,8 +417,9 @@ def replay(selector: str) -> dict[str, Any]:
     intensity_metrics = metrics.get("intensity", {})
 
     wind_kmph = round(current.wind_knots * KNOTS_TO_KMPH) if current.wind_knots is not None else None
+    source_features = _source_features(storm_id, current.time)
 
-    # 1. Official Dvorak Technique Pattern & Intensity Analysis
+    # Research intensity-derived Dvorak-scale proxy; it contains no imagery analysis.
     dvorak = classify_pattern(
         wind_knots=current.wind_knots,
         pressure_hpa=current.pressure_hpa,
@@ -380,16 +427,18 @@ def replay(selector: str) -> dict[str, Any]:
         longitude=current.longitude,
     )
 
-    # 2. Rapid Intensification (RI) Risk Engine
+    # ERA5 SST is injected only when the exact extracted row is present; shear
+    # remains a declared seasonal proxy until an upper-air extractor is added.
     ri = evaluate_rapid_intensification(
         current_wind_knots=current.wind_knots,
         prior_wind_knots=previous.wind_knots,
         latitude=current.latitude,
         longitude=current.longitude,
         season_month=current.time.month,
+        sea_surface_temperature_c=source_features["era5_sst_celsius"],
     )
 
-    # 3. Coastal Landfall Intersection & District Vulnerability Analysis
+    # Static coastal-proximity screen, not a coastline-intersection or warning engine.
     landfall, district_impacts = evaluate_landfall_and_impact(
         forecast_track=forecast,
         current_lat=current.latitude,
@@ -398,18 +447,18 @@ def replay(selector: str) -> dict[str, Any]:
         issue_time=current.time,
     )
 
-    # 4. Asymmetric Quadrant Wind Radii (34kt, 50kt, 64kt)
+    # Wind-extent display proxy derived only from wind speed.
     wind_radii = _calculate_asymmetric_wind_radii(current.wind_knots)
 
-    # 5. Calibrated 70% Probability Cone of Uncertainty Polygon
+    # Held-out-error-scaled display envelope; no probabilistic calibration is implied.
     cone_polygon = _calculate_cone_polygon(current.latitude, current.longitude, forecast)
 
     base_payload = {
         "id": storm_id,
         "name": f"Cyclone {current.name.title()}",
         "season": str(current.season),
-        "basin": "North Indian Ocean · MoES / RSMC Monitoring",
-        "data_mode": "Multi-source replay · IBTrACS + Dvorak + RI + Landfall Impact",
+        "basin": "North Indian Ocean · Historical research replay",
+        "data_mode": "IBTrACS historical replay + research screening modules",
         "status": _classification(current.wind_knots),
         "last_updated": current.time.isoformat().replace("+00:00", "Z"),
         "current": {
@@ -417,15 +466,17 @@ def replay(selector: str) -> dict[str, Any]:
             "lon": current.longitude,
             "wind_kmph": wind_kmph,
             "pressure_hpa": current.pressure_hpa,
-            "rainfall_mm_hr": 24.5 if current.wind_knots and current.wind_knots >= 64 else 12.0,
+            "rainfall_mm_hr": source_features["imerg_center_precipitation_mm_hr"],
             "wind_radii": wind_radii,
         },
         "classification": {
             "label": _classification(current.wind_knots),
-            "confidence": 0.88,
-            "detail": f"Dvorak CI{dvorak.ci_number:.1f} / {dvorak.pattern_type} with {dvorak.cloud_metrics['convective_symmetry_percent']}% axisymmetry.",
+            "confidence": None,
+            "detail": f"Intensity-derived Dvorak-scale proxy (CI{dvorak.ci_number:.1f}); no INSAT image model is connected.",
         },
         "dvorak": {
+            "assessment_mode": dvorak.assessment_mode,
+            "limitations": dvorak.limitations,
             "pattern_type": dvorak.pattern_type,
             "pattern_description": dvorak.pattern_description,
             "t_number": dvorak.t_number,
@@ -439,9 +490,11 @@ def replay(selector: str) -> dict[str, Any]:
             "attribution": dvorak.attribution,
         },
         "rapid_intensification": {
-            "ri_probability": ri.ri_probability,
-            "alert_level": ri.alert_level,
+            "ri_score": ri.ri_score,
+            "screening_level": ri.screening_level,
             "status_label": ri.status_label,
+            "input_mode": ri.input_mode,
+            "limitations": ri.limitations,
             "summary": ri.summary,
             "favorable_factors": ri.favorable_factors,
             "inhibiting_factors": ri.inhibiting_factors,
@@ -450,6 +503,8 @@ def replay(selector: str) -> dict[str, Any]:
             "projected_24h_wind_ri_knots": ri.projected_24h_wind_ri_knots,
         },
         "landfall": {
+            "assessment_mode": landfall.assessment_mode,
+            "limitations": landfall.limitations,
             "will_make_landfall": landfall.will_make_landfall,
             "landfall_point": landfall.landfall_point,
             "nearest_landmark": landfall.nearest_landmark,
@@ -468,8 +523,8 @@ def replay(selector: str) -> dict[str, Any]:
         "model_metrics": {
             "track_error_km": track_metrics.get("endpoint_mae_km"),
             "intensity_mae_knots": intensity_metrics.get("wind_mae_knots"),
-            "classification_f1": 0.892,
-            "model_name": "Multi-Source Cyclone AI v1.0 · MoES SIH Edition",
+            "classification_f1": None,
+            "model_name": "Ridge research baseline v0.1 · 24-hour horizon",
         },
         "observed_track": _display_track(track, issue_index),
         "forecast_track": forecast,
@@ -477,15 +532,16 @@ def replay(selector: str) -> dict[str, Any]:
         "district_risk": district_impacts,
         "provenance": {
             "observations": "NOAA IBTrACS v04r01, North Indian Ocean subset",
-            "forecast": "Ridge baseline with calibrated along/cross track uncertainty",
-            "dvorak": "RSMC New Delhi Dvorak standard formulation",
-            "ri_engine": "WMO / IMD 30-knot Rapid Intensification criteria",
+            "era5_sst": "Exact event-aligned ERA5 extraction" if source_features["era5_available"] else "Unavailable for this replay timestamp; RI uses a seasonal SST proxy.",
+            "imerg_rainfall": "Exact event-aligned GPM IMERG extraction" if source_features["imerg_available"] else "Unavailable for this replay timestamp; rainfall is intentionally blank.",
+            "forecast": "Ridge baseline with a held-out-error-scaled display envelope; not a calibrated probability cone.",
+            "dvorak": "Intensity-to-Dvorak-scale proxy from best-track wind and pressure; no satellite imagery is used.",
+            "ri_engine": "Best-track trend plus seasonal-proxy screening score; not a calibrated probability.",
             "reference_future_available": True,
         },
     }
 
-    # 6. Generate official IMD advisory text bulletin
-    bulletin_text = generate_imd_bulletin(base_payload)
+    bulletin_text = generate_research_brief(base_payload)
     base_payload["bulletin_text"] = bulletin_text
 
     return base_payload

@@ -1,14 +1,9 @@
-"""Dvorak Technique Cyclone Pattern Classification and Intensity Engine.
+"""Dvorak-scale intensity proxy for historical cyclone replays.
 
-Implements the official Dvorak cloud pattern recognition methodology used by
-the India Meteorological Department (IMD) / RSMC New Delhi for North Indian
-Ocean tropical cyclones.
-
-Computes:
-1. Dvorak Cloud Pattern Classification (Curved Band, CDO, Eye, Shear, Embedded Center)
-2. T-Number regression (T1.0 to T8.0) and Current Intensity (CI) number
-3. Central Pressure Deficit (ΔP) via Mishra-Gupta / Knaff-Zehr NIO formulation
-4. Convective symmetry, log-spiral wrap, and visual attention attribution
+This module derives a Dvorak-scale number from best-track wind and pressure.
+It does **not** ingest or analyse INSAT imagery, cloud-top temperatures, or
+eyewall structure.  Pattern, cloud and attribution values are explanatory
+proxies only; they must never be presented as an official IMD/RSMC assessment.
 """
 
 from __future__ import annotations
@@ -20,6 +15,8 @@ from typing import Any
 
 @dataclass(frozen=True)
 class DvorakAssessment:
+    assessment_mode: str
+    limitations: list[str]
     pattern_type: str
     pattern_description: str
     t_number: float
@@ -33,8 +30,7 @@ class DvorakAssessment:
     attribution: list[dict[str, Any]]
 
 
-# Standard Dvorak T-Number to Maximum Sustained Wind (1-min kt) and IMD (3-min kt) mapping
-# IMD uses 3-minute sustained wind, which is ~0.88 - 0.90 of 1-minute wind.
+# Dvorak-scale reference table used only to create the best-track proxy.
 T_NUMBER_TABLE = [
     (1.0, 25.0, 23.0, 3.0),
     (1.5, 25.0, 25.0, 4.0),
@@ -61,15 +57,25 @@ def wind_to_t_number(wind_knots: float | None) -> float:
     if wind_knots >= 165.0:
         return 8.0
 
-    # Piecewise interpolation across standard Dvorak table
-    for i in range(len(T_NUMBER_TABLE) - 1):
-        t1, w1, _, _ = T_NUMBER_TABLE[i]
-        t2, w2, _, _ = T_NUMBER_TABLE[i + 1]
-        if w1 <= wind_knots <= w2:
-            fraction = (wind_knots - w1) / (w2 - w1)
-            return round(t1 + fraction * (t2 - t1), 1)
+    # The reference table has two entries at 25 kt. Retain the higher T-number
+    # at an identical wind threshold, then interpolate only between strictly
+    # increasing winds. This prevents a valid 25-kt best-track observation
+    # from dividing by zero and keeps sub-25-kt systems near T1.0.
+    points: list[tuple[float, float]] = []
+    for t_number, wind, _, _ in T_NUMBER_TABLE:
+        if points and wind == points[-1][1]:
+            points[-1] = (t_number, wind)
+        else:
+            points.append((t_number, wind))
 
-    return 4.0
+    previous_t, previous_wind = 1.0, 15.0
+    for t_number, wind in points:
+        if wind_knots <= wind:
+            fraction = (wind_knots - previous_wind) / (wind - previous_wind)
+            return round(previous_t + fraction * (t_number - previous_t), 1)
+        previous_t, previous_wind = t_number, wind
+
+    return points[-1][0]
 
 
 def calculate_pressure_deficit(wind_knots: float | None, latitude: float) -> float:
@@ -93,7 +99,7 @@ def classify_pattern(
     latitude: float,
     longitude: float,
 ) -> DvorakAssessment:
-    """Classify the tropical cyclone cloud pattern and generate explainable metrics."""
+    """Create a clearly labelled intensity-derived Dvorak-scale proxy."""
     wind = wind_knots if wind_knots is not None else 35.0
     t_num = wind_to_t_number(wind)
     ci_num = t_num  # CI is equal to or slightly higher than T-number during decay
@@ -209,6 +215,12 @@ def classify_pattern(
     ]
 
     return DvorakAssessment(
+        assessment_mode="best_track_intensity_proxy",
+        limitations=[
+            "No satellite image pixels or cloud-top temperatures are used.",
+            "Pattern labels and visual metrics are deterministic explanatory proxies, not observations.",
+            "Not an official Dvorak analysis or operational intensity estimate.",
+        ],
         pattern_type=pattern,
         pattern_description=description,
         t_number=t_num,

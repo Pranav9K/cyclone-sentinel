@@ -1,14 +1,8 @@
-"""Coastal Landfall Detection, Storm Surge, and District Vulnerability Engine.
+"""Static coastal-proximity and impact screening for research replays.
 
-Implements the official Disaster Management decision-support layer for
-Ministry of Earth Sciences (MoES) and NDMA/SDMA emergency operations centers.
-
-Computes:
-1. Exact Landfall point (lat, lon) and coastal landmark / port intersection
-2. Landfall Time Window (ETA in hours and UTC/IST timestamps)
-3. Projected Landfall Intensity, Category, and Peak Gust speed
-4. Estimated Storm Surge Inundation Height (meters)
-5. Coastal District Warning Tiers (Red, Orange, Yellow) with population exposure
+This module compares a model track against static district reference points.
+It does not intersect a coastline, model tide/surge/bathymetry, or issue an
+official warning. Results are for research display only.
 """
 
 from __future__ import annotations
@@ -21,6 +15,8 @@ from typing import Any
 
 @dataclass(frozen=True)
 class LandfallForecast:
+    assessment_mode: str
+    limitations: list[str]
     will_make_landfall: bool
     landfall_point: dict[str, float] | None
     nearest_landmark: str
@@ -87,7 +83,7 @@ def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) ->
 
 
 def estimate_surge_height(wind_knots: float | None, basin_sector: str) -> tuple[float, str]:
-    """Estimate peak coastal storm surge height in meters based on wind and bathymetry."""
+    """Return a wind-only surge proxy, not a surge or inundation prediction."""
     wind = wind_knots if wind_knots is not None else 45.0
 
     # Base surge proportional to kinetic wind energy
@@ -115,13 +111,13 @@ def estimate_surge_height(wind_knots: float | None, basin_sector: str) -> tuple[
     final_surge = round(base_surge * multiplier, 1)
 
     if final_surge >= 3.5:
-        level = "CATASTROPHIC INUNDATION (>3.5m)"
+        level = "Very high wind-only surge proxy"
     elif final_surge >= 2.0:
-        level = "SEVERE INUNDATION (2.0 - 3.5m)"
+        level = "High wind-only surge proxy"
     elif final_surge >= 1.0:
-        level = "MODERATE INUNDATION (1.0 - 2.0m)"
+        level = "Moderate wind-only surge proxy"
     else:
-        level = "LOW / TIDAL SURGE (<1.0m)"
+        level = "Low wind-only surge proxy"
 
     return final_surge, level
 
@@ -133,9 +129,11 @@ def evaluate_landfall_and_impact(
     current_wind_knots: float | None,
     issue_time: datetime,
 ) -> tuple[LandfallForecast, list[dict[str, Any]]]:
-    """Detect coastal landfall, compute ETA and surge, and tier affected districts."""
+    """Screen model-track proximity to static district reference points."""
     if not forecast_track:
         default_forecast = LandfallForecast(
+            assessment_mode="static_district_proximity_screening",
+            limitations=["No coastline, tide, bathymetry, exposure, or vulnerability data are modelled."],
             will_make_landfall=False,
             landfall_point=None,
             nearest_landmark="Open sea navigation",
@@ -205,6 +203,12 @@ def evaluate_landfall_and_impact(
     )
 
     landfall = LandfallForecast(
+        assessment_mode="static_district_proximity_screening",
+        limitations=[
+            "The 160 km threshold is a display screen against district reference points, not a landfall detector.",
+            "Surge values are wind-only proxies and exclude tide, bathymetry, coastline shape, and wave setup.",
+            "Static population figures are context only, not a current exposure estimate or warning basis.",
+        ],
         will_make_landfall=will_make_landfall,
         landfall_point=lf_point,
         nearest_landmark=f"Near {closest_district['district']} Coastline ({closest_district['state']})",
@@ -232,25 +236,25 @@ def evaluate_landfall_and_impact(
             continue
 
         if dist_km <= 90.0 and will_make_landfall:
-            alert = "RED WARNING"
+            alert = "RESEARCH SCREEN — HIGH"
             level = "Severe"
             score = 92
-            action = "Evacuate low-lying coastal belts; suspend port and marine operations completely"
+            action = "Closest static-reference corridor; consult official advisories for action."
         elif dist_km <= 180.0:
-            alert = "ORANGE ALERT"
+            alert = "RESEARCH SCREEN — ELEVATED"
             level = "High"
             score = 76
-            action = "Prepare cyclone shelters; restrict coastal movement and moor fishing vessels"
+            action = "Track-proximity screen only; consult official advisories for action."
         elif dist_km <= 320.0:
-            alert = "YELLOW WATCH"
+            alert = "RESEARCH SCREEN — MODERATE"
             level = "Moderate"
             score = 54
-            action = "Fishermen advised not to venture into deep sea; standby rescue personnel"
+            action = "Track-proximity screen only; consult official advisories for action."
         else:
-            alert = "GREEN ADVISORY"
+            alert = "RESEARCH SCREEN — LOW"
             level = "Low"
             score = 28
-            action = "Monitor official IMD bulletins regularly"
+            action = "Track-proximity screen only; consult official advisories for action."
 
         rainfall_threat = "Extremely Heavy (>200 mm)" if dist_km <= 120 else "Heavy to Very Heavy (70-200 mm)" if dist_km <= 250 else "Moderate Scattered (15-60 mm)"
         peak_wind_expected = max(35, round(wind_landfall_kmph * max(0.35, 1.0 - (dist_km / 350.0))))
@@ -269,7 +273,7 @@ def evaluate_landfall_and_impact(
                 f"Proximity: {dist_km:.0f} km from projected track corridor",
                 f"Peak gust threat: up to {peak_wind_expected} km/h",
                 f"Rainfall hazard: {rainfall_threat}",
-                f"Directive: {action}",
+                f"Screening note: {action}",
             ],
         })
 

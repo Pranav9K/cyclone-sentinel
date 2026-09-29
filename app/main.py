@@ -60,6 +60,28 @@ def source_layer_status(source: str) -> str:
     return "credentials_required"
 
 
+def insat_layer_status() -> str:
+    """Report only locally indexed imagery readiness, never RSS metadata as imagery."""
+    catalog = read_json_object(PROCESSED_DIR / "insat_image_catalog.json")
+    summary = catalog.get("summary")
+    accepted = summary.get("accepted_images", 0) if isinstance(summary, dict) else 0
+    if catalog.get("status") == "ready_for_feature_extraction" and isinstance(accepted, int) and accepted > 0:
+        return "ready_for_feature_extraction"
+    if (PROCESSED_DIR / "insat_image_catalog.json").exists():
+        return "waiting_for_raw_data"
+    return "registration_required"
+
+
+def insat_training_index_status() -> str:
+    """Expose only the readiness of real image-to-track supervised pairing."""
+    manifest = read_json_object(PROCESSED_DIR / "insat_training_index_manifest.json")
+    counts = manifest.get("counts")
+    paired = counts.get("paired", 0) if isinstance(counts, dict) else 0
+    if manifest.get("status") == "ready_for_image_feature_extraction" and isinstance(paired, int) and paired > 0:
+        return "ready_for_feature_extraction"
+    return "waiting_for_source_features"
+
+
 def live_satellite_products() -> dict:
     """Return operational-source readiness without exposing credentials or raw files."""
     source_config = read_json_object(LIVE_SOURCES_PATH)
@@ -167,7 +189,7 @@ def prediction(storm_id: str) -> dict:
 
 @app.get("/api/v1/storms/{storm_id}/bulletin")
 def storm_bulletin(storm_id: str) -> dict[str, str]:
-    """Return the official IMD / RSMC Tropical Cyclone Advisory Bulletin payload."""
+    """Return a clearly labelled non-operational historical research brief."""
     if not data_ready():
         raise HTTPException(status_code=503, detail="Collected replay data is unavailable")
     try:
@@ -184,7 +206,7 @@ def storm_bulletin(storm_id: str) -> dict[str, str]:
 
 @app.get("/api/v1/storms/{storm_id}/bulletin/text", response_class=PlainTextResponse)
 def storm_bulletin_text(storm_id: str) -> str:
-    """Return the raw plaintext IMD / RSMC Tropical Cyclone Advisory Bulletin."""
+    """Return the raw text of the non-operational historical research brief."""
     if not data_ready():
         raise HTTPException(status_code=503, detail="Collected replay data is unavailable")
     try:
@@ -196,7 +218,7 @@ def storm_bulletin_text(storm_id: str) -> str:
 
 @app.get("/api/v1/storms/{storm_id}/dvorak")
 def storm_dvorak(storm_id: str) -> dict:
-    """Return Dvorak cloud pattern classification, T-number, and visual attribution."""
+    """Return an intensity-derived Dvorak-scale proxy, not image analysis."""
     if not data_ready():
         raise HTTPException(status_code=503, detail="Collected replay data is unavailable")
     try:
@@ -208,7 +230,7 @@ def storm_dvorak(storm_id: str) -> dict:
 
 @app.get("/api/v1/storms/{storm_id}/ri")
 def storm_ri(storm_id: str) -> dict:
-    """Return Rapid Intensification (RI) risk assessment and physical drivers."""
+    """Return a non-operational Rapid Intensification screening heuristic."""
     if not data_ready():
         raise HTTPException(status_code=503, detail="Collected replay data is unavailable")
     try:
@@ -220,7 +242,7 @@ def storm_ri(storm_id: str) -> dict:
 
 @app.get("/api/v1/storms/{storm_id}/impact")
 def storm_impact(storm_id: str) -> dict:
-    """Return coastal landfall forecast, storm surge, and district exposure tiers."""
+    """Return static coastal-proximity and wind-only impact screening context."""
     if not data_ready():
         raise HTTPException(status_code=503, detail="Collected replay data is unavailable")
     try:
@@ -237,7 +259,7 @@ def storm_impact(storm_id: str) -> dict:
 
 @app.get("/api/v1/data/status")
 def data_status() -> dict:
-    """Report whether official historical training data has been collected."""
+    """Report whether historical training data has been collected."""
     if MANIFEST_PATH.exists():
         manifest = read_json_object(MANIFEST_PATH)
         if manifest:
@@ -252,6 +274,9 @@ def data_status() -> dict:
 @app.get("/api/v1/data/catalog")
 def data_catalog() -> dict:
     """Describe source-layer readiness without exposing raw data files."""
+    readiness_manifest = read_json_object(PROCESSED_DIR / "collection_readiness.json")
+    readiness_sources = readiness_manifest.get("sources") if isinstance(readiness_manifest.get("sources"), list) else []
+    readiness_setup_needed = any(isinstance(item, dict) and item.get("status") in {"setup_required", "registration_required"} for item in readiness_sources)
     multisource_manifest_path = PROCESSED_DIR / "multisource_training_manifest.json"
     multisource_manifest = read_json_object(multisource_manifest_path)
     raw_counts = multisource_manifest.get("counts", {})
@@ -283,6 +308,12 @@ def data_catalog() -> dict:
             "purpose": "24-hour track and wind benchmark",
         },
         {
+            "id": "collection_preflight",
+            "name": "Local collection preflight",
+            "status": "setup_required" if readiness_setup_needed else "ready" if readiness_manifest else "pending",
+            "purpose": "Safe local check for provider setup, dependencies, and raw-file counts; it never exposes credentials.",
+        },
+        {
             "id": "era5",
             "name": "ERA5 atmospheric context",
             "status": source_layer_status("era5"),
@@ -302,15 +333,27 @@ def data_catalog() -> dict:
             "counts": multisource_counts,
         },
         {
+            "id": "multisource_baseline",
+            "name": "ERA5 + IMERG research benchmark",
+            "status": "ready" if (PROCESSED_DIR / "multisource_baseline_metrics.json").exists() else "waiting_for_source_features",
+            "purpose": "Strict complete-case research benchmark; never trained on missing source values",
+        },
+        {
             "id": "insat",
             "name": "MOSDAC INSAT imagery",
-            "status": "registration_required",
-            "purpose": "Satellite pattern classification",
+            "status": insat_layer_status(),
+            "purpose": "Real image cataloguing and future satellite pattern classification",
+        },
+        {
+            "id": "insat_supervised_index",
+            "name": "INSAT + IBTrACS training pairs",
+            "status": insat_training_index_status(),
+            "purpose": "Timestamp-matched image files and historical intensity labels for future ML training",
         },
     ]
     return {
         "layers": layers,
-        "next_milestone": "Configure local CDS credentials, collect event-aligned ERA5, then run ERA5 extraction.",
+        "next_milestone": readiness_manifest.get("next_action") if isinstance(readiness_manifest.get("next_action"), str) else "Run scripts/check_collection_readiness.py --write, then configure local CDS credentials and collect event-aligned ERA5.",
     }
 
 

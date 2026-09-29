@@ -57,3 +57,18 @@ Training should use an explicit strategy: complete-case rows, missingness-aware 
 ```
 
 Add `--require-complete` only after both feature tables have been collected and validated.
+
+## Complete-case research benchmark
+
+After rebuilding the joined table, run:
+
+```powershell
+.\.venv\Scripts\python scripts/train_multisource_baseline.py
+```
+
+The benchmark only accepts rows whose `multisource_complete` value is `true`.
+It uses the ERA5 and IMERG feature columns together with the pre-issue
+best-track state, preserves the existing train/test split, and writes ignored
+model and metric artifacts under `data/processed/`. It intentionally exits
+without creating a model when either source remains unavailable. This is a
+research comparison, not an operational forecasting model.

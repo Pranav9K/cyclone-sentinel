@@ -1,798 +1,465 @@
-/**
- * Cyclone Sentinel · MoES Tropical Cyclone Intelligence Frontend
- * Supports interactive timeline playback, Dvorak pattern classification,
- * Rapid Intensification (RI) risk gauges, landfall impact & surge analysis,
- * asymmetric quadrant wind radii, and official IMD RSMC bulletins.
- */
+/* Beginner-friendly historical cyclone research dashboard. */
+let currentStorm = null;
+let availableStorms = [];
+let globeView = null;
 
-// Global state
-let currentStormData = null;
-let currentStormList = [];
-let mapInstance = null;
-let mapLayers = {
-  track: L.layerGroup(),
-  cone: L.layerGroup(),
-  radii: L.layerGroup(),
-  satellite: L.layerGroup(),
-  districts: L.layerGroup(),
-  landfall: L.layerGroup(),
-  scrubberMarker: L.layerGroup(),
-};
-let playbackInterval = null;
-let isPlaying = false;
-let activeLayersState = {
-  track: true,
-  radii: true,
-  satellite: true,
-  districts: true,
+const statusLabels = {
+  ready: "Ready", partial_coverage: "Partly available", waiting_for_raw_data: "Waiting for data",
+  waiting_for_source_features: "Waiting for features", ready_for_feature_extraction: "Ready to extract",
+  credentials_required: "Credentials needed", registration_required: "Registration needed", planned: "Planned",
+  setup_required: "Setup required", ready_to_collect: "Ready to collect", collection_started: "Collection started",
+  pending: "Not started", metadata_current: "Metadata current", stale: "Stale metadata",
+  metadata_unverified: "Time unavailable", not_polled: "Not checked", unavailable: "Unavailable",
 };
 
-function number(value, maximumFractionDigits = 0) {
+function number(value, digits = 0) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return "—";
-  return new Intl.NumberFormat("en-IN", { maximumFractionDigits }).format(value);
+  return new Intl.NumberFormat("en-IN", { maximumFractionDigits: digits }).format(value);
 }
-
 function escapeHtml(value) {
-  return String(value).replace(/[&<>'"]/g, c => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
-  }[c]));
+  return String(value ?? "").replace(/[&<>'"]/g, char => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "'":"&#39;", '"':"&quot;" }[char]));
+}
+function shortTime(value) {
+  return value ? value.replace("T", " ").replace("Z", " UTC") : "—";
 }
 
-const layerStates = {
-  ready: ["Ready", "ready"],
-  partial_coverage: ["Partial coverage", "partial"],
-  waiting_for_raw_data: ["Awaiting raw data", "waiting"],
-  waiting_for_source_features: ["Awaiting features", "waiting"],
-  ready_for_feature_extraction: ["Ready to extract", "planned"],
-  credentials_required: ["Credentials needed", "blocked"],
-  registration_required: ["Registration needed", "blocked"],
-  planned: ["Planned", "planned"],
-  pending: ["Pending", "pending"],
-  metadata_current: ["Metadata current", "ready"],
-  stale: ["Stale metadata", "partial"],
-  metadata_unverified: ["Timestamp unavailable", "partial"],
-  not_polled: ["Not polled", "pending"],
-  unavailable: ["Unavailable", "blocked"],
-};
-
-/* ----------------------------------------------------
-   1. TOPBAR & STORM SELECTION
----------------------------------------------------- */
-async function loadStormSelector(selectedId) {
-  try {
-    const res = await fetch("/api/v1/storms");
-    if (!res.ok) return;
-    currentStormList = await res.json();
-    const select = document.querySelector("#storm-select");
-    select.innerHTML = currentStormList.map(s => {
-      const isSel = s.id === selectedId ? "selected" : "";
-      return `<option value="${escapeHtml(s.id)}" ${isSel}>${escapeHtml(s.name)} (${s.season}) · ${escapeHtml(s.peak_category)}</option>`;
-    }).join("");
-
-    select.onchange = (e) => {
-      loadStorm(e.target.value);
-    };
-  } catch (err) {
-    console.error("Failed to load storms list", err);
-  }
+function openView(id) {
+  document.querySelectorAll(".view").forEach(view => {
+    const active = view.id === id;
+    view.hidden = !active;
+    view.classList.toggle("active", active);
+  });
+  document.querySelectorAll("[data-view-target]").forEach(button => {
+    button.classList.toggle("active", button.dataset.viewTarget === id);
+  });
+  if (id === "map-view" && globeView) setTimeout(() => globeView.resize(), 40);
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-/* ----------------------------------------------------
-   2. HERO & METRIC CARDS
----------------------------------------------------- */
-function renderHero(storm) {
-  document.querySelector("#storm-name").textContent = storm.name;
-  document.querySelector("#storm-subtitle").textContent =
-    `${storm.basin} · ${storm.status} · Issued ${storm.last_updated}`;
-  document.querySelector("#replay-mode-text").textContent = storm.data_mode;
+function setupNavigation() {
+  document.querySelectorAll("[data-view-target]").forEach(button => {
+    button.addEventListener("click", () => openView(button.dataset.viewTarget));
+  });
+}
 
-  // RI Pill
+function setupTheme() {
+  const selector = document.querySelector("#theme-toggle");
+  let savedTheme = "light";
+  try { savedTheme = localStorage.getItem("cyclone-sentinel-theme") || "light"; } catch { /* Storage may be unavailable. */ }
+  const applyTheme = theme => {
+    const selectedTheme = theme === "dark" ? "dark" : "light";
+    document.documentElement.dataset.theme = selectedTheme;
+    selector.checked = selectedTheme === "dark";
+    if (globeView) globeView.applyTheme();
+    try { localStorage.setItem("cyclone-sentinel-theme", selectedTheme); } catch { /* Keep the selected session theme. */ }
+  };
+  applyTheme(savedTheme);
+  selector.addEventListener("change", () => applyTheme(selector.checked ? "dark" : "light"));
+}
+
+async function loadStormList(selectedId) {
+  const response = await fetch("/api/v1/storms");
+  if (!response.ok) throw new Error("The collected storm list is unavailable.");
+  availableStorms = await response.json();
+  const selector = document.querySelector("#storm-select");
+  const selected = availableStorms.find(storm => storm.id === selectedId) || availableStorms[0];
+  document.querySelector("#storm-select-label").textContent = selected ? `${selected.name} · ${selected.season}` : "No collected storms";
+  selector.disabled = !selected;
+  renderStormOptions(document.querySelector("#storm-search").value);
+}
+
+function renderStormOptions(query = "") {
+  const normalized = query.trim().toLowerCase();
+  const options = availableStorms.filter(storm => `${storm.name} ${storm.season} ${storm.peak_category}`.toLowerCase().includes(normalized));
+  const container = document.querySelector("#storm-options");
+  container.innerHTML = options.length ? options.map(storm => `
+    <button class="storm-option" type="button" role="option" data-storm-id="${escapeHtml(storm.id)}" aria-selected="${storm.id === currentStorm?.id}">
+      <span><strong>${escapeHtml(storm.name)}</strong><small>${escapeHtml(storm.peak_category)}</small></span>
+      <em>${escapeHtml(storm.season)}</em>
+    </button>`).join("") : "<p class=\"empty-storm-options\">No storm matches that search.</p>";
+  container.querySelectorAll(".storm-option").forEach(option => option.onclick = () => {
+    closeStormPicker();
+    loadStorm(option.dataset.stormId);
+  });
+}
+
+function closeStormPicker() {
+  const menu = document.querySelector("#storm-select-menu");
+  const button = document.querySelector("#storm-select");
+  menu.hidden = true;
+  button.setAttribute("aria-expanded", "false");
+}
+
+function setupStormPicker() {
+  const button = document.querySelector("#storm-select");
+  const menu = document.querySelector("#storm-select-menu");
+  const search = document.querySelector("#storm-search");
+  button.onclick = () => {
+    const willOpen = menu.hidden;
+    menu.hidden = !willOpen;
+    button.setAttribute("aria-expanded", String(willOpen));
+    if (willOpen) { search.focus(); renderStormOptions(search.value); }
+  };
+  search.oninput = () => renderStormOptions(search.value);
+  search.onkeydown = event => { if (event.key === "Escape") { closeStormPicker(); button.focus(); } };
+  document.addEventListener("click", event => {
+    if (!event.target.closest(".storm-picker-control")) closeStormPicker();
+  });
+}
+
+function renderOverview(storm) {
+  const current = storm.current || {};
   const ri = storm.rapid_intensification || {};
-  const riPill = document.querySelector("#ri-pill");
-  riPill.textContent = ri.status_label || "LOW RI RISK";
-  riPill.className = `badge-pill badge-${(ri.alert_level || "low").toLowerCase()}`;
-
-  // Landfall Pill
-  const lf = storm.landfall || {};
-  const lfPill = document.querySelector("#landfall-pill");
-  if (lf.will_make_landfall) {
-    lfPill.textContent = `LANDFALL: ${lf.category_at_landfall} (${lf.nearest_port})`;
-    lfPill.className = "badge-pill badge-critical";
-  } else {
-    lfPill.textContent = "OCEANIC TRACK · NO IMMEDIATE LANDFALL";
-    lfPill.className = "badge-pill badge-moderate";
-  }
-}
-
-function renderMetrics(storm) {
-  const cur = storm.current || {};
   const dvorak = storm.dvorak || {};
-  const ri = storm.rapid_intensification || {};
-  const lf = storm.landfall || {};
-  const metrics = storm.model_metrics || {};
-
-  const windKt = cur.wind_kmph ? Math.round(cur.wind_kmph / 1.852) : null;
-  const etaText = lf.eta_hours ? `+${lf.eta_hours}h (${lf.eta_timestamp_ist ? lf.eta_timestamp_ist.split(' ')[0] : ''})` : "Open Sea";
-
+  document.querySelector("#storm-name").textContent = storm.name;
+  document.querySelector("#storm-subtitle").textContent = `${storm.status || "Storm"} · Last historical observation: ${shortTime(storm.last_updated)}`;
+  document.querySelector("#replay-mode-text").textContent = storm.data_mode || "Historical replay";
+  const rainfall = current.rainfall_mm_hr === null || current.rainfall_mm_hr === undefined ? "Not collected" : `${number(current.rainfall_mm_hr, 1)} mm/hr`;
   const cards = [
-    {
-      eyebrow: "SUSTAINED WIND",
-      value: number(cur.wind_kmph),
-      unit: "km/h",
-      label: `${windKt ? windKt + " kt · " : ""}${storm.status}`,
-    },
-    {
-      eyebrow: "CENTRAL PRESSURE",
-      value: number(cur.pressure_hpa),
-      unit: "hPa",
-      label: `ΔP Drop: ${number(dvorak.central_pressure_deficit_hpa, 1)} hPa`,
-    },
-    {
-      eyebrow: "DVORAK INTENSITY",
-      value: `T${number(dvorak.t_number, 1)}`,
-      unit: `/ CI${number(dvorak.ci_number, 1)}`,
-      label: `${dvorak.pattern_type}`,
-    },
-    {
-      eyebrow: "RAPID INTENSIFICATION",
-      value: `${Math.round((ri.ri_probability || 0) * 100)}`,
-      unit: "%",
-      label: `${ri.status_label}`,
-    },
-    {
-      eyebrow: "PROJECTED LANDFALL",
-      value: etaText,
-      unit: "",
-      label: lf.nearest_port || "Open Ocean",
-    },
-    {
-      eyebrow: "24H MODEL ERROR",
-      value: number(metrics.track_error_km, 1),
-      unit: "km",
-      label: `Wind MAE: ${number(metrics.intensity_mae_knots, 1)} kt`,
-    },
+    ["Current wind", `${number(current.wind_kmph)} km/h`, "Observed best-track value"],
+    ["Central pressure", `${number(current.pressure_hpa)} hPa`, "Observed best-track value"],
+    ["Storm type", storm.status || "—", "Based on recorded wind"],
+    ["Rainfall data", rainfall, "Blank means no matching IMERG feature is available"],
   ];
-
-  document.querySelector("#metrics").innerHTML = cards.map(c => `
-    <article class="metric-card">
-      <span class="metric-eyebrow">${c.eyebrow}</span>
-      <div class="metric-value">${c.value}${c.unit ? ` <small>${c.unit}</small>` : ""}</div>
-      <div class="metric-label" title="${escapeHtml(c.label)}">${escapeHtml(c.label)}</div>
-    </article>
-  `).join("");
+  document.querySelector("#metrics").innerHTML = cards.map(([label, value, detail]) => `<article class="metric"><span class="label">${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(detail)}</small></article>`).join("");
+  renderAnalysis(dvorak, ri);
+  renderCoastal(storm.landfall || {}, storm.district_risk || []);
 }
 
-/* ----------------------------------------------------
-   3. DVORAK PATTERN & INTENSITY CARD
----------------------------------------------------- */
-function renderDvorak(storm) {
-  const dv = storm.dvorak || {};
-  const cm = dv.cloud_metrics || {};
-
-  document.querySelector("#dvorak-badge").textContent = dv.pattern_type || "UNKNOWN";
-  document.querySelector("#dvorak-t-num").textContent = `T${(dv.t_number || 1.0).toFixed(1)}`;
-  document.querySelector("#dvorak-ci-num").textContent = `CI ${(dv.ci_number || 1.0).toFixed(1)}`;
-  document.querySelector("#dvorak-desc").textContent = dv.pattern_description || "";
-  document.querySelector("#dvorak-delta-p").textContent = `${number(dv.central_pressure_deficit_hpa, 1)} hPa`;
-
-  const metricsGrid = [
-    { label: "Core Convective Symmetry", val: `${number(cm.convective_symmetry_percent)}%` },
-    { label: "Spiral Rainband Wrap", val: `${number(cm.log_spiral_wrap_turns, 2)} turns` },
-    { label: "Min Cloud Top Temp", val: `${number(cm.min_cloud_top_temperature_celsius, 1)}°C` },
-    { label: "Cloud Shield Span", val: `${number(cm.cloud_shield_diameter_km)} km` },
-  ];
-
-  document.querySelector("#cloud-metrics").innerHTML = metricsGrid.map(m => `
-    <div class="cloud-metric-item">
-      <span class="cm-lbl">${m.label}</span>
-      <span class="cm-val">${m.val}</span>
-    </div>
-  `).join("");
-
-  // Explainable AI Attribution Bars
-  const attrList = Array.isArray(dv.attribution) ? dv.attribution : [];
-  document.querySelector("#attribution-bars").innerHTML = attrList.map(a => {
-    const pct = Math.round((a.weight || 0) * 100);
-    return `
-      <div class="attr-row">
-        <div>
-          <span style="color:var(--text); font-weight:600;">${escapeHtml(a.feature)}</span>
-          <div class="attr-track"><div class="attr-fill" style="width: ${pct}%;"></div></div>
-        </div>
-        <span class="attr-pct">${pct}%</span>
-      </div>
-    `;
-  }).join("");
+function renderAnalysis(dvorak, ri) {
+  const score = Math.round((ri.ri_score || 0) * 100);
+  document.querySelector("#dvorak-t-num").textContent = `T${number(dvorak.t_number, 1)}`;
+  document.querySelector("#dvorak-badge").textContent = dvorak.pattern_type || "Unavailable";
+  document.querySelector("#dvorak-delta-p").textContent = `${number(dvorak.central_pressure_deficit_hpa, 1)} hPa`;
+  document.querySelector("#dvorak-desc").textContent = dvorak.pattern_description || "No proxy detail is available.";
+  document.querySelector("#ri-score").textContent = `${score}/100`;
+  document.querySelector("#ri-alert-badge").textContent = ri.status_label || "Unavailable";
+  document.querySelector("#ri-score-bar").style.width = `${score}%`;
+  document.querySelector("#ri-summary").textContent = ri.summary || "No screening summary is available.";
+  const factors = Object.values(ri.factor_scores || {});
+  document.querySelector("#ri-factors").innerHTML = factors.map(factor => `<div class="factor"><span>${escapeHtml(factor.name)}</span><b>${escapeHtml(factor.value)}${factor.favorable ? " · favourable" : " · limiting"}</b></div>`).join("");
 }
 
-/* ----------------------------------------------------
-   4. RAPID INTENSIFICATION (RI) DIAGNOSTICS CARD
----------------------------------------------------- */
-function renderRI(storm) {
-  const ri = storm.rapid_intensification || {};
-  const probPct = Math.round((ri.ri_probability || 0) * 100);
-
-  const badge = document.querySelector("#ri-alert-badge");
-  badge.textContent = ri.status_label || "LOW RI RISK";
-  badge.className = `ri-alert-badge badge-${(ri.alert_level || "low").toLowerCase()}`;
-
-  document.querySelector("#ri-prob-val").textContent = `${probPct}%`;
-  document.querySelector("#ri-prob-bar").style.width = `${probPct}%`;
-  document.querySelector("#ri-summary").textContent = ri.summary || "";
-
-  // Dynamic factors list
-  const factors = ri.factor_scores || {};
-  document.querySelector("#ri-factors").innerHTML = Object.values(factors).map(f => `
-    <div class="ri-factor-row">
-      <span>${escapeHtml(f.name)}: <b>${escapeHtml(f.value)}</b></span>
-      <span class="factor-status-pill ${f.favorable ? "pill-fav" : "pill-inh"}">
-        ${f.favorable ? "FAVORABLE" : "INHIBITING"}
-      </span>
-    </div>
-  `).join("");
-
-  document.querySelector("#proj-steady").textContent = `${number(ri.projected_24h_wind_normal_knots)} kt`;
-  document.querySelector("#proj-ri").textContent = `${number(ri.projected_24h_wind_ri_knots)} kt`;
+function renderCoastal(landfall, districts) {
+  document.querySelector("#lf-landmark").textContent = landfall.nearest_landmark || "Open ocean";
+  document.querySelector("#lf-port").textContent = landfall.nearest_port || "—";
+  document.querySelector("#lf-eta-ist").textContent = landfall.eta_timestamp_ist || "No proximity flag";
+  document.querySelector("#lf-surge").textContent = landfall.storm_surge_meters === null || landfall.storm_surge_meters === undefined ? "Not available" : `${number(landfall.storm_surge_meters, 1)} m proxy`;
+  document.querySelector("#districts-list").innerHTML = districts.length ? districts.map(district => `<article class="district"><div><strong>${escapeHtml(district.district)}</strong><small>${number(district.distance_to_track_km)} km from research track · Static population: ${number(district.population_exposed)}</small></div><span class="tag">${escapeHtml(district.alert_tier)}</span></article>`).join("") : "<p>No static reference district is near this research route.</p>";
 }
 
-/* ----------------------------------------------------
-   5. COASTAL LANDFALL & SURGE HAZARD CARD
----------------------------------------------------- */
-function renderLandfall(storm) {
-  const lf = storm.landfall || {};
-  const districts = Array.isArray(storm.district_risk) ? storm.district_risk : [];
+function globePoint(lat, lon, radius = 1) {
+  const latitude = Number(lat) * Math.PI / 180;
+  const longitude = Number(lon) * Math.PI / 180;
+  return {
+    x: radius * Math.cos(latitude) * Math.sin(longitude),
+    y: radius * Math.sin(latitude),
+    z: radius * Math.cos(latitude) * Math.cos(longitude),
+  };
+}
 
-  const badge = document.querySelector("#landfall-status-badge");
-  if (lf.will_make_landfall) {
-    badge.textContent = "COASTAL STRIKE IMMINENT";
-    badge.className = "landfall-badge badge-critical";
-  } else {
-    badge.textContent = "DEEP BASIN RECURVATURE";
-    badge.className = "landfall-badge badge-moderate";
-  }
-
-  document.querySelector("#lf-landmark").textContent = lf.nearest_landmark || "Open ocean track";
-  document.querySelector("#lf-port").textContent = lf.nearest_port || "None nearby";
-  document.querySelector("#lf-eta-ist").textContent = lf.eta_timestamp_ist || "N/A";
-  document.querySelector("#lf-category").textContent = lf.category_at_landfall || "N/A";
-  document.querySelector("#lf-surge").textContent = lf.storm_surge_meters
-    ? `${number(lf.storm_surge_meters, 1)} m (${lf.surge_warning_level})`
-    : "No surge threat";
-
-  // Districts table
-  if (districts.length === 0) {
-    document.querySelector("#districts-list").innerHTML = `
-      <div style="padding:12px; color:var(--muted); font-size:11px;">No coastal districts within high-risk corridor.</div>
-    `;
-    return;
-  }
-
-  document.querySelector("#districts-list").innerHTML = districts.map(d => {
-    let tierClass = "dist-yellow";
-    let tagClass = "tag-yellow";
-    if (d.alert_tier.includes("RED")) {
-      tierClass = "dist-red"; tagClass = "tag-red";
-    } else if (d.alert_tier.includes("ORANGE")) {
-      tierClass = "dist-orange"; tagClass = "tag-orange";
-    } else if (d.alert_tier.includes("GREEN")) {
-      tierClass = "dist-green"; tagClass = "tag-yellow";
+function globeArc(points, radius = 1) {
+  if (points.length < 2) return points.map(point => globePoint(point.lat, point.lon, radius));
+  const arc = [];
+  points.forEach((point, index) => {
+    if (index === points.length - 1) return;
+    const next = points[index + 1];
+    const start = globePoint(point.lat, point.lon);
+    const end = globePoint(next.lat, next.lon);
+    for (let step = 0; step < 10; step += 1) {
+      const fraction = step / 10;
+      const x = start.x + (end.x - start.x) * fraction;
+      const y = start.y + (end.y - start.y) * fraction;
+      const z = start.z + (end.z - start.z) * fraction;
+      const length = Math.hypot(x, y, z) || 1;
+      arc.push({ x: x / length * radius, y: y / length * radius, z: z / length * radius });
     }
-
-    return `
-      <div class="district-item ${tierClass}">
-        <div>
-          <div class="dist-name">${escapeHtml(d.district)}</div>
-          <div class="dist-meta">
-            ${number(d.distance_to_track_km)} km to track · Pop: ${number(d.population_exposed)} · Wind: ${d.expected_wind_kmph} km/h
-          </div>
-        </div>
-        <span class="dist-alert-tag ${tagClass}">${escapeHtml(d.alert_tier)}</span>
-      </div>
-    `;
-  }).join("");
+  });
+  const last = points.at(-1);
+  arc.push(globePoint(last.lat, last.lon, radius));
+  return arc;
 }
 
-/* ----------------------------------------------------
-   6. INTERACTIVE MAP & SATELLITE / RADII LAYERS
----------------------------------------------------- */
-function createQuadrantPolygon(lat, lon, radiiObj, color, fillOpacity) {
-  // Compute approximate 16-point polygon for 4 asymmetric quadrants: NE, SE, SW, NW
-  const { ne, se, sw, nw } = radiiObj;
+function globeDistanceRing(lat, lon, distanceKm) {
+  const earthRadiusKm = 6371;
+  const angularDistance = Number(distanceKm) / earthRadiusKm;
+  const latitude = Number(lat) * Math.PI / 180;
+  const longitude = Number(lon) * Math.PI / 180;
   const points = [];
-  const kmToDegLat = 1 / 111.0;
-
-  function addArc(rKm, startDeg, endDeg) {
-    const degLon = rKm / (111.0 * Math.max(0.1, Math.cos((lat * Math.PI) / 180)));
-    const degLat = rKm * kmToDegLat;
-    for (let deg = startDeg; deg <= endDeg; deg += 22.5) {
-      const rad = (deg * Math.PI) / 180;
-      points.push([lat + degLat * Math.cos(rad), lon + degLon * Math.sin(rad)]);
-    }
+  for (let step = 0; step < 48; step += 1) {
+    const bearing = (step / 48) * Math.PI * 2;
+    const ringLat = Math.asin(Math.sin(latitude) * Math.cos(angularDistance) + Math.cos(latitude) * Math.sin(angularDistance) * Math.cos(bearing));
+    const ringLon = longitude + Math.atan2(Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(latitude), Math.cos(angularDistance) - Math.sin(latitude) * Math.sin(ringLat));
+    points.push(globePoint(ringLat * 180 / Math.PI, ringLon * 180 / Math.PI));
   }
-
-  // NE quadrant (0 to 90 deg)
-  addArc(ne, 0, 90);
-  // SE quadrant (270 to 360 deg)
-  addArc(se, 270, 360);
-  // SW quadrant (180 to 270 deg)
-  addArc(sw, 180, 270);
-  // NW quadrant (90 to 180 deg)
-  addArc(nw, 90, 180);
-
-  return L.polygon(points, {
-    color: color,
-    weight: 1.5,
-    fillColor: color,
-    fillOpacity: fillOpacity,
-  });
+  return points;
 }
 
-function renderSatelliteSimulation(lat, lon, tNumber) {
-  // Creates multi-tier realistic thermal infrared (BD-Curve) cloud top layers
-  const satGroup = mapLayers.satellite;
-  satGroup.clearLayers();
+function clearGlobeLayer(layer) { layer.items = []; }
 
-  const baseRadiusKm = 140 + (tNumber || 3.0) * 35;
+function countryRings(geometry) {
+  const polygons = geometry?.type === "Polygon" ? [geometry.coordinates] : geometry?.type === "MultiPolygon" ? geometry.coordinates : [];
+  return polygons.flatMap(polygon => polygon.map(ring => {
+    const simplified = ring.filter(([lon, lat], index) => index === 0 || index === ring.length - 1 || Math.abs(lon - ring[index - 1][0]) + Math.abs(lat - ring[index - 1][1]) > .45);
+    return simplified.map(([lon, lat]) => globePoint(lat, lon));
+  }));
+}
 
-  // Outer Cirrus Canopy (-30°C to -45°C)
-  satGroup.addLayer(
-    L.circle([lat, lon], {
-      radius: baseRadiusKm * 1000,
-      color: "transparent",
-      fillColor: "#475569",
-      fillOpacity: 0.22,
-    })
-  );
-
-  // Dense Central Overcast (-50°C to -65°C Cyan/Teal)
-  satGroup.addLayer(
-    L.circle([lat, lon], {
-      radius: baseRadiusKm * 0.62 * 1000,
-      color: "transparent",
-      fillColor: "#06b6d4",
-      fillOpacity: 0.32,
-    })
-  );
-
-  // Cold Eyewall Ring (-70°C to -80°C Crimson/Magenta)
-  satGroup.addLayer(
-    L.circle([lat, lon], {
-      radius: baseRadiusKm * 0.32 * 1000,
-      color: "transparent",
-      fillColor: "#ec4899",
-      fillOpacity: 0.45,
-    })
-  );
-
-  // Warm Core / Eye if T >= 4.5
-  if (tNumber >= 4.5) {
-    satGroup.addLayer(
-      L.circle([lat, lon], {
-        radius: 18 * 1000,
-        color: "#ffffff",
-        weight: 1,
-        fillColor: "#1e293b",
-        fillOpacity: 0.65,
-      }).bindTooltip("Warm Eye Core", { permanent: false })
-    );
+async function loadCountryBoundaries(view) {
+  try {
+    const response = await fetch("/static/world-countries.geojson");
+    if (!response.ok) throw new Error("Country-boundary data is unavailable.");
+    const world = await response.json();
+    view.countries = (world.features || []).flatMap(feature => countryRings(feature.geometry));
+  } catch {
+    view.countries = [];
   }
 }
 
-function buildMap(storm) {
-  if (!mapInstance) {
-    mapInstance = L.map("map", { zoomControl: false }).setView([18, 70], 5);
-    L.control.zoom({ position: "bottomright" }).addTo(mapInstance);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 10,
-      attribution: "© OpenStreetMap contributors",
-    }).addTo(mapInstance);
-
-    // Add all layer groups to map initially
-    Object.values(mapLayers).forEach(lg => lg.addTo(mapInstance));
-    new ResizeObserver(() => mapInstance.invalidateSize()).observe(document.querySelector("#map"));
-  }
-
-  // Clear existing layers
-  Object.values(mapLayers).forEach(lg => lg.clearLayers());
-
-  const cur = storm.current || {};
-  const observed = (storm.observed_track || []).map(p => [p.lat, p.lon]);
-  const forecast = [
-    observed.at(-1) || [cur.lat, cur.lon],
-    ...(storm.forecast_track || []).map(p => [p.lat, p.lon]),
-  ];
-
-  // 1. TRACKS
-  mapLayers.track.addLayer(L.polyline(observed, { color: "#5ce2b8", weight: 4.5, opacity: 0.9 }));
-  mapLayers.track.addLayer(L.polyline(forecast, { color: "#ffb854", weight: 3.5, dashArray: "8 8", opacity: 0.9 }));
-
-  storm.observed_track.forEach((p, idx) => {
-    const isLatest = idx === storm.observed_track.length - 1;
-    L.circleMarker([p.lat, p.lon], {
-      radius: isLatest ? 8 : 4,
-      color: isLatest ? "#ffffff" : "#5ce2b8",
-      weight: isLatest ? 2 : 1,
-      fillColor: isLatest ? "#5ce2b8" : "#0d131b",
-      fillOpacity: 1,
-    })
-      .bindTooltip(`${p.time.replace("T", " ").replace("Z", "")}<br><b>${p.stage || ""}</b> · ${p.wind_kmph || "—"} km/h`)
-      .addTo(mapLayers.track);
-  });
-
-  (storm.forecast_track || []).forEach(p => {
-    L.circleMarker([p.lat, p.lon], {
-      radius: 5,
-      color: "#ffb854",
-      fillColor: "#ffb854",
-      fillOpacity: 1,
-    })
-      .bindTooltip(`+${p.hours}h · ${p.lat}°N, ${p.lon}°E<br><b>${number(p.wind_kmph)} km/h</b> ±${p.radius_km} km`)
-      .addTo(mapLayers.track);
-  });
-
-  // 2. CONE OF UNCERTAINTY POLYGON
-  const conePoly = storm.cone_polygon || [];
-  if (conePoly.length > 2) {
-    mapLayers.cone.addLayer(
-      L.polygon(conePoly, {
-        color: "#ffb854",
-        weight: 1.5,
-        fillColor: "#ffb854",
-        fillOpacity: 0.12,
-        dashArray: "4 4",
-      })
-    );
-  }
-
-  // 3. ASYMMETRIC QUADRANT WIND RADII
-  const radii = cur.wind_radii || {};
-  if (radii.r34_km) {
-    mapLayers.radii.addLayer(createQuadrantPolygon(cur.lat, cur.lon, radii.r34_km, "#ffb854", 0.12));
-  }
-  if (radii.r50_km) {
-    mapLayers.radii.addLayer(createQuadrantPolygon(cur.lat, cur.lon, radii.r50_km, "#ff8e3c", 0.18));
-  }
-  if (radii.r64_km) {
-    mapLayers.radii.addLayer(createQuadrantPolygon(cur.lat, cur.lon, radii.r64_km, "#ff4757", 0.25));
-  }
-
-  // 4. SIMULATED SATELLITE CLOUD CANOPY
-  const tNum = storm.dvorak ? storm.dvorak.t_number : 3.5;
-  renderSatelliteSimulation(cur.lat, cur.lon, tNum);
-
-  // 5. LANDFALL VECTOR & TARGET
-  const lf = storm.landfall || {};
-  if (lf.will_make_landfall && lf.landfall_point) {
-    const lfPt = [lf.landfall_point.lat, lf.landfall_point.lon];
-    mapLayers.landfall.addLayer(
-      L.circleMarker(lfPt, {
-        radius: 9,
-        color: "#ff3b4e",
-        weight: 3,
-        fillColor: "#ffffff",
-        fillOpacity: 1,
-      }).bindTooltip(`<b>PROJECTED LANDFALL</b><br>${lf.nearest_landmark}<br>ETA: ${lf.eta_timestamp_ist || ""}<br>Peak Surge: ${lf.storm_surge_meters || "—"} m`, { permanent: true, direction: "top", offset: [0, -10] })
-    );
-  }
-
-  // 6. DISTRICTS AT RISK MARKERS
-  (storm.district_risk || []).forEach(d => {
-    // If district coordinates are approximated, render pin
-    // Use alert tier color
-    let col = "#ffd84d";
-    if (d.alert_tier.includes("RED")) col = "#ff4757";
-    else if (d.alert_tier.includes("ORANGE")) col = "#ffa502";
-  });
-
-  // Fit bounds
-  const allPts = [...observed, ...forecast];
-  if (allPts.length > 0) {
-    mapInstance.fitBounds(L.latLngBounds(allPts).pad(0.32));
-  }
-}
-
-/* ----------------------------------------------------
-   7. TIMELINE PLAYBACK / SCRUBBER ENGINE
----------------------------------------------------- */
-function setupTimeline(storm) {
-  const track = storm.observed_track || [];
-  const slider = document.querySelector("#time-slider");
-  slider.max = Math.max(0, track.length - 1);
-  slider.value = slider.max;
-
-  function updateScrubber(index) {
-    slider.value = index;
-    const pt = track[index];
-    if (!pt) return;
-
-    document.querySelector("#scrub-timestamp").textContent = pt.time.replace("T", " ").replace("Z", " UTC");
-    document.querySelector("#telemetry-coords").textContent = `${pt.lat.toFixed(2)}°N, ${pt.lon.toFixed(2)}°E`;
-    document.querySelector("#telemetry-wind").textContent = pt.wind_kmph ? `${pt.wind_kmph} km/h` : "—";
-    document.querySelector("#telemetry-stage").textContent = pt.stage || "—";
-
-    // Update scrubber marker on map
-    mapLayers.scrubberMarker.clearLayers();
-    const isLatest = index === track.length - 1;
-    L.circleMarker([pt.lat, pt.lon], {
-      radius: 10,
-      color: "#ffffff",
-      weight: 2,
-      fillColor: isLatest ? "#5ce2b8" : "#ffb854",
-      fillOpacity: 1,
-    })
-      .bindTooltip(`Time: ${pt.time}<br>Wind: ${pt.wind_kmph || "—"} km/h<br>${pt.stage || ""}`, { permanent: false })
-      .addTo(mapLayers.scrubberMarker);
-  }
-
-  slider.oninput = (e) => {
-    updateScrubber(parseInt(e.target.value, 10));
+function initializeGlobe() {
+  const host = document.querySelector("#globe");
+  const canvas = document.createElement("canvas");
+  canvas.setAttribute("aria-hidden", "true");
+  host.replaceChildren(canvas);
+  const context = canvas.getContext("2d");
+  const view = {
+    canvas, context, rotation: { x: 0, y: 0 }, homeRotation: { x: 0, y: 0 }, zoom: 1, zoomTarget: 1, countries: [],
+    layers: { track: { visible: true, items: [] }, cone: { visible: true, items: [] }, radii: { visible: true, items: [] } },
   };
-
-  document.querySelector("#btn-scrub-first").onclick = () => updateScrubber(0);
-  document.querySelector("#btn-scrub-prev").onclick = () => {
-    const nextIdx = Math.max(0, parseInt(slider.value, 10) - 1);
-    updateScrubber(nextIdx);
+  let dragging = false;
+  let lastPointer = null;
+  let spinAgainAt = 0;
+  let velocity = { x: 0, y: 0 };
+  let pinchDistance = null;
+  const touchPoints = new Map();
+  const zoomInput = document.querySelector("#globe-zoom");
+  const zoomValue = document.querySelector("#globe-zoom-value");
+  const setZoom = value => {
+    view.zoomTarget = Math.max(.65, Math.min(3.2, value));
+    zoomInput.value = String(Math.round(view.zoomTarget * 100));
+    zoomValue.value = `${Math.round(view.zoomTarget * 100)}%`;
+    zoomValue.textContent = zoomValue.value;
   };
-  document.querySelector("#btn-scrub-next").onclick = () => {
-    const nextIdx = Math.min(track.length - 1, parseInt(slider.value, 10) + 1);
-    updateScrubber(nextIdx);
+  const resetView = () => {
+    velocity = { x: 0, y: 0 };
+    view.rotation.x = view.homeRotation.x;
+    view.rotation.y = view.homeRotation.y;
+    setZoom(1);
   };
-  document.querySelector("#btn-scrub-last").onclick = () => updateScrubber(track.length - 1);
-
-  // Play / Pause Animation
-  const playBtn = document.querySelector("#btn-scrub-play");
-  playBtn.onclick = () => {
-    if (isPlaying) {
-      clearInterval(playbackInterval);
-      isPlaying = false;
-      playBtn.textContent = "▶ PLAY";
-      playBtn.classList.remove("playing");
-    } else {
-      isPlaying = true;
-      playBtn.textContent = "⏸ PAUSE";
-      playBtn.classList.add("playing");
-      if (parseInt(slider.value, 10) >= track.length - 1) {
-        slider.value = 0;
+  document.querySelector("#globe-zoom-in").onclick = () => setZoom(view.zoomTarget + .2);
+  document.querySelector("#globe-zoom-out").onclick = () => setZoom(view.zoomTarget - .2);
+  document.querySelector("#globe-reset").onclick = resetView;
+  zoomInput.oninput = () => setZoom(Number(zoomInput.value) / 100);
+  const rotate = point => {
+    const cosY = Math.cos(view.rotation.y); const sinY = Math.sin(view.rotation.y);
+    const x = point.x * cosY - point.z * sinY; const z = point.x * sinY + point.z * cosY;
+    const cosX = Math.cos(view.rotation.x); const sinX = Math.sin(view.rotation.x);
+    return { x, y: point.y * cosX - z * sinX, z: point.y * sinX + z * cosX };
+  };
+  const project = point => {
+    const rotated = rotate(point);
+    const radius = Math.min(canvas.clientWidth, canvas.clientHeight) * .34 * view.zoom;
+    return { x: canvas.clientWidth / 2 + rotated.x * radius, y: canvas.clientHeight / 2 - rotated.y * radius, visible: rotated.z >= 0 };
+  };
+  const path = (points, color, options = {}) => {
+    const projected = points.map(project); let drawing = false;
+    context.beginPath();
+    projected.forEach(point => {
+      if (!point.visible) { drawing = false; return; }
+      if (drawing) context.lineTo(point.x, point.y); else context.moveTo(point.x, point.y);
+      drawing = true;
+    });
+    context.strokeStyle = color; context.globalAlpha = options.opacity ?? 1; context.lineWidth = options.width ?? 1.5;
+    context.setLineDash(options.dashed ? [6, 5] : []); context.stroke(); context.setLineDash([]); context.globalAlpha = 1;
+  };
+  const country = points => {
+    const projected = points.map(project); const fullyVisible = projected.every(point => point.visible); let drawing = false;
+    context.beginPath();
+    projected.forEach(point => {
+      if (!point.visible) { drawing = false; return; }
+      if (drawing) context.lineTo(point.x, point.y); else context.moveTo(point.x, point.y);
+      drawing = true;
+    });
+    if (fullyVisible) { context.closePath(); context.fill(); }
+    context.stroke();
+  };
+  const render = () => {
+    const width = canvas.clientWidth; const height = canvas.clientHeight; const radius = Math.min(width, height) * .34 * view.zoom;
+    if (!width || !height) return;
+    context.clearRect(0, 0, width, height);
+    const dark = document.documentElement.dataset.theme === "dark";
+    const glow = context.createRadialGradient(width * .38, height * .32, radius * .08, width / 2, height / 2, radius * 1.08);
+    glow.addColorStop(0, dark ? "#287cb3" : "#58a4d2"); glow.addColorStop(.68, dark ? "#0c456f" : "#23658e"); glow.addColorStop(1, dark ? "#061c31" : "#153d5c");
+    context.save(); context.shadowColor = dark ? "#3bb5f5" : "#73c7ef"; context.shadowBlur = Math.min(26, radius * .12); context.beginPath(); context.arc(width / 2, height / 2, radius, 0, Math.PI * 2); context.fillStyle = glow; context.fill(); context.restore();
+    context.save(); context.beginPath(); context.arc(width / 2, height / 2, radius, 0, Math.PI * 2); context.clip();
+    const terminator = context.createLinearGradient(width * .2, height * .18, width * .88, height * .8);
+    terminator.addColorStop(0, "#ffffff00"); terminator.addColorStop(.54, "#00131a12"); terminator.addColorStop(1, dark ? "#0209169c" : "#03162780");
+    context.fillStyle = terminator; context.fillRect(0, 0, width, height); context.restore();
+    context.save(); context.beginPath(); context.arc(width / 2, height / 2, radius, 0, Math.PI * 2); context.clip();
+    for (let latitude = -60; latitude <= 60; latitude += 30) path(globeArc(Array.from({ length: 73 }, (_, index) => ({ lat: latitude, lon: -180 + index * 5 }))), dark ? "#65a8d1" : "#a7d0e5", { opacity: .38, width: 1 });
+    for (let longitude = -150; longitude < 180; longitude += 30) path(globeArc(Array.from({ length: 37 }, (_, index) => ({ lat: -90 + index * 5, lon: longitude }))), dark ? "#65a8d1" : "#a7d0e5", { opacity: .38, width: 1 });
+    context.fillStyle = dark ? "#176a66" : "#3d8b71"; context.strokeStyle = dark ? "#9bd7c6" : "#c7ead9"; context.globalAlpha = .76; context.lineWidth = .75;
+    view.countries.forEach(country);
+    context.globalAlpha = 1;
+    Object.values(view.layers).filter(layer => layer.visible).forEach(layer => layer.items.forEach(item => {
+      if (item.type === "path") path(item.points, item.color, item);
+      if (item.type === "marker") {
+        const point = project(item.point); if (!point.visible) return;
+        context.save(); context.shadowColor = item.ring ? "#72e4cf" : item.color; context.shadowBlur = item.ring ? 16 : 4;
+        context.fillStyle = item.color; context.beginPath(); context.arc(point.x, point.y, item.radius, 0, Math.PI * 2); context.fill();
+        if (item.ring) { context.strokeStyle = "#72e4cf"; context.lineWidth = 2.5; context.beginPath(); context.arc(point.x, point.y, item.radius + 11, 0, Math.PI * 2); context.stroke(); }
+        if (item.label) { context.shadowBlur = 3; context.fillStyle = dark ? "#f1fbff" : "#08253c"; context.font = "700 11px Manrope, system-ui, sans-serif"; context.fillText(item.label, point.x + 16, point.y - 13); }
+        context.restore();
       }
-      playbackInterval = setInterval(() => {
-        let currentIdx = parseInt(slider.value, 10);
-        if (currentIdx < track.length - 1) {
-          updateScrubber(currentIdx + 1);
-        } else {
-          clearInterval(playbackInterval);
-          isPlaying = false;
-          playBtn.textContent = "▶ PLAY";
-          playBtn.classList.remove("playing");
-        }
-      }, 700);
-    }
+    }));
+    context.restore();
+    context.strokeStyle = dark ? "#75c9f7" : "#d2efff"; context.lineWidth = 1.5; context.beginPath(); context.arc(width / 2, height / 2, radius, 0, Math.PI * 2); context.stroke();
   };
-
-  updateScrubber(track.length - 1);
+  const resize = () => {
+    const ratio = Math.min(window.devicePixelRatio || 1, 2); const width = Math.max(host.clientWidth, 1); const height = Math.max(host.clientHeight, 1);
+    canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio); canvas.style.width = `${width}px`; canvas.style.height = `${height}px`; context.setTransform(ratio, 0, 0, ratio, 0, 0); render();
+  };
+  const distanceBetweenTouches = () => {
+    const [first, second] = [...touchPoints.values()];
+    return first && second ? Math.hypot(first.x - second.x, first.y - second.y) : null;
+  };
+  host.addEventListener("pointerdown", event => {
+    touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY }); host.setPointerCapture(event.pointerId);
+    if (touchPoints.size === 2) { dragging = false; velocity = { x: 0, y: 0 }; pinchDistance = distanceBetweenTouches(); return; }
+    dragging = true; velocity = { x: 0, y: 0 }; lastPointer = { x: event.clientX, y: event.clientY };
+  });
+  host.addEventListener("pointermove", event => {
+    if (touchPoints.has(event.pointerId)) touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (touchPoints.size === 2) {
+      const nextDistance = distanceBetweenTouches();
+      if (nextDistance && pinchDistance) setZoom(view.zoomTarget + (nextDistance - pinchDistance) / 240);
+      pinchDistance = nextDistance;
+      return;
+    }
+    if (!dragging || !lastPointer) return;
+    const changeX = event.clientX - lastPointer.x; const changeY = event.clientY - lastPointer.y;
+    view.rotation.y -= changeX * .008; view.rotation.x = Math.max(-.75, Math.min(.75, view.rotation.x + changeY * .006));
+    velocity = { x: -changeX * .00058, y: changeY * .00044 }; lastPointer = { x: event.clientX, y: event.clientY };
+  });
+  const finishDrag = event => {
+    touchPoints.delete(event.pointerId);
+    pinchDistance = touchPoints.size === 2 ? distanceBetweenTouches() : null;
+    if (touchPoints.size === 1) { lastPointer = [...touchPoints.values()][0]; dragging = true; return; }
+    dragging = false; lastPointer = null; spinAgainAt = performance.now() + 1400;
+  };
+  host.addEventListener("pointerup", finishDrag); host.addEventListener("pointercancel", finishDrag);
+  host.addEventListener("wheel", event => { event.preventDefault(); setZoom(view.zoomTarget - event.deltaY * .0018); }, { passive: false });
+  new ResizeObserver(resize).observe(host);
+  const animate = now => {
+    view.zoom += (view.zoomTarget - view.zoom) * .2;
+    if (!dragging) {
+      if (Math.abs(velocity.x) + Math.abs(velocity.y) > .00004) {
+        view.rotation.y += velocity.x; view.rotation.x = Math.max(-.75, Math.min(.75, view.rotation.x + velocity.y)); velocity = { x: velocity.x * .93, y: velocity.y * .93 };
+      } else if (now > spinAgainAt && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) view.rotation.y += .00065;
+    }
+    render(); requestAnimationFrame(animate);
+  };
+  resize(); void loadCountryBoundaries(view); requestAnimationFrame(animate);
+  return { ...view, resize, setZoom, resetView, applyTheme: render };
 }
 
-/* ----------------------------------------------------
-   8. MAP CONTROLS TOGGLES
----------------------------------------------------- */
-function setupMapControls() {
-  document.querySelectorAll(".layer-chip").forEach(chip => {
-    chip.onclick = () => {
-      const layerKey = chip.getAttribute("data-layer");
-      activeLayersState[layerKey] = !activeLayersState[layerKey];
-      chip.classList.toggle("active", activeLayersState[layerKey]);
+function averageRadius(radii) {
+  const values = Object.values(radii || {}).map(Number).filter(value => Number.isFinite(value) && value > 0);
+  return values.length ? values.reduce((total, value) => total + value, 0) / values.length : null;
+}
 
-      if (layerKey === "track") {
-        if (activeLayersState.track) {
-          mapLayers.track.addTo(mapInstance);
-          mapLayers.cone.addTo(mapInstance);
-        } else {
-          mapLayers.track.remove();
-          mapLayers.cone.remove();
-        }
-      } else if (layerKey === "radii") {
-        if (activeLayersState.radii) mapLayers.radii.addTo(mapInstance);
-        else mapLayers.radii.remove();
-      } else if (layerKey === "satellite") {
-        if (activeLayersState.satellite) mapLayers.satellite.addTo(mapInstance);
-        else mapLayers.satellite.remove();
-      } else if (layerKey === "districts") {
-        if (activeLayersState.districts) {
-          mapLayers.districts.addTo(mapInstance);
-          mapLayers.landfall.addTo(mapInstance);
-        } else {
-          mapLayers.districts.remove();
-          mapLayers.landfall.remove();
-        }
-      }
-    };
+function addStormMarker(layer, lat, lon, label) {
+  layer.items.push({ type: "marker", point: globePoint(lat, lon), radius: 8, color: "#f7fbff", ring: true, label });
+}
+
+function renderMap(storm) {
+  if (!globeView) globeView = initializeGlobe();
+  Object.values(globeView.layers).forEach(clearGlobeLayer);
+  const current = storm.current || {};
+  const observed = storm.observed_track || [];
+  const lastObserved = observed.at(-1) || current;
+  const forecast = [lastObserved, ...(storm.forecast_track || [])];
+  if (observed.length > 1) globeView.layers.track.items.push({ type: "path", points: globeArc(observed), color: "#42d1a6", width: 4 });
+  if (forecast.length > 1) globeView.layers.track.items.push({ type: "path", points: globeArc(forecast), color: "#5d9cff", dashed: true, width: 3 });
+  const markerInterval = Math.max(1, Math.ceil(observed.length / 15));
+  observed.forEach((point, index) => {
+    if (index % markerInterval !== 0 && index !== observed.length - 1) return;
+    globeView.layers.track.items.push({ type: "marker", point: globePoint(point.lat, point.lon), radius: index === observed.length - 1 ? 4 : 2, color: index === observed.length - 1 ? "#f7fbff" : "#42d1a6" });
+  });
+  if (Number.isFinite(Number(current.lat)) && Number.isFinite(Number(current.lon))) addStormMarker(globeView.layers.track, current.lat, current.lon, `${storm.name || "Storm"} · latest record`);
+  if ((storm.cone_polygon || []).length > 2) {
+    const polygon = storm.cone_polygon.map(([lat, lon]) => ({ lat, lon }));
+    globeView.layers.cone.items.push({ type: "path", points: globeArc([...polygon, polygon[0]]), color: "#9bc6ff", dashed: true, opacity: .9, width: 1.6 });
+  }
+  const radii = current.wind_radii || {};
+  [[radii.r34_km, "#f4b64f"], [radii.r50_km, "#ef8830"], [radii.r64_km, "#dd5d72"]].forEach(([quadrants, color]) => {
+    const radius = averageRadius(quadrants);
+    if (radius && Number.isFinite(Number(current.lat)) && Number.isFinite(Number(current.lon))) globeView.layers.radii.items.push({ type: "path", points: globeDistanceRing(current.lat, current.lon, radius), color, width: 1.6 });
+  });
+  if (Number.isFinite(Number(lastObserved.lon))) {
+    globeView.homeRotation.x = -Number(lastObserved.lat || 0) * Math.PI / 180 * .22;
+    globeView.homeRotation.y = Number(lastObserved.lon) * Math.PI / 180;
+    globeView.rotation.x = globeView.homeRotation.x;
+    globeView.rotation.y = globeView.homeRotation.y;
+    globeView.setZoom(1);
+  }
+  document.querySelector("#forecast-list").innerHTML = (storm.forecast_track || []).map(point => `<article class="forecast-item"><strong>Research baseline · +${point.hours} hours</strong><small>${number(point.lat, 2)}°N, ${number(point.lon, 2)}°E · ${number(point.wind_kmph)} km/h · error radius ±${number(point.radius_km)} km</small></article>`).join("");
+}
+
+function setupMapButtons() {
+  document.querySelectorAll(".map-toggle").forEach(button => button.onclick = () => {
+    const layer = globeView?.layers[button.dataset.layer];
+    if (!layer) return;
+    layer.visible = !layer.visible;
+    button.classList.toggle("active", layer.visible);
   });
 }
 
-/* ----------------------------------------------------
-   9. OFFICIAL IMD RSMC BULLETIN MODAL
----------------------------------------------------- */
-function setupBulletinModal(storm) {
+function sourceCard(item, live = false) {
+  const state = item.status || "pending";
+  const label = statusLabels[state] || state.replaceAll("_", " ");
+  const description = live ? `${item.provider || "Provider"} · ${item.mode || "Source product"}` : item.purpose || "Source status";
+  const extra = live ? (item.latest?.published_at ? `Last published: ${shortTime(item.latest.published_at)}` : "No accepted current metadata") : "";
+  return `<article class="source-card"><span class="status status-${escapeHtml(state)}">${escapeHtml(label)}</span><h3>${escapeHtml(item.name)}</h3><p>${escapeHtml(description)}</p><small>${escapeHtml(extra)}</small></article>`;
+}
+
+async function renderSources() {
+  try {
+    const [catalogResponse, liveResponse] = await Promise.all([fetch("/api/v1/data/catalog"), fetch("/api/v1/live/products")]);
+    const catalog = await catalogResponse.json();
+    const live = await liveResponse.json();
+    document.querySelector("#pipeline-grid").innerHTML = (catalog.layers || []).map(item => sourceCard(item)).join("");
+    document.querySelector("#pipeline-next").textContent = catalog.next_milestone || "No collection step is available.";
+    document.querySelector("#live-grid").innerHTML = (live.products || []).map(item => sourceCard(item, true)).join("");
+    document.querySelector("#live-next").textContent = live.next_step || "No provider status is available.";
+  } catch {
+    document.querySelector("#pipeline-next").textContent = "Data-source status could not be loaded.";
+  }
+}
+
+function setupBrief() {
   const modal = document.querySelector("#bulletin-modal");
-  const btnOpen = document.querySelector("#btn-bulletin");
-  const btnClose = document.querySelector("#btn-close-modal");
-  const btnActionClose = document.querySelector("#btn-close-bulletin-action");
-  const btnCopy = document.querySelector("#btn-copy-bulletin");
-  const btnDownload = document.querySelector("#btn-download-bulletin");
-  const content = document.querySelector("#bulletin-content");
-  const statusSpan = document.querySelector("#copy-status");
-
-  function closeModal() {
-    modal.hidden = true;
-    modal.classList.add("hidden");
-    modal.style.display = "none";
-  }
-
-  function openModal() {
-    const activeData = currentStormData || storm;
-    content.textContent = activeData.bulletin_text || "Advisory bulletin text unavailable.";
-    modal.hidden = false;
-    modal.classList.remove("hidden");
-    modal.style.display = "flex";
-    if (statusSpan) statusSpan.textContent = "";
-  }
-
-  if (btnOpen) btnOpen.onclick = openModal;
-  if (btnClose) btnClose.onclick = closeModal;
-  if (btnActionClose) btnActionClose.onclick = closeModal;
-
-  modal.onclick = (e) => {
-    if (e.target === modal) closeModal();
+  const close = () => { modal.hidden = true; };
+  document.querySelector("#btn-bulletin").onclick = () => { document.querySelector("#bulletin-content").textContent = currentStorm?.bulletin_text || "Research brief unavailable."; modal.hidden = false; };
+  document.querySelector("#btn-close-modal").onclick = close;
+  modal.onclick = event => { if (event.target === modal) close(); };
+  document.querySelector("#btn-copy-bulletin").onclick = async () => { if (currentStorm?.bulletin_text) await navigator.clipboard.writeText(currentStorm.bulletin_text); };
+  document.querySelector("#btn-download-bulletin").onclick = () => {
+    const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([currentStorm?.bulletin_text || ""], { type:"text/plain" })); link.download = `cyclone-research-brief-${currentStorm?.id || "storm"}.txt`; link.click(); URL.revokeObjectURL(link.href);
   };
-
-  // Close on Escape key
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && modal.style.display !== "none") {
-      closeModal();
-    }
-  });
-
-  if (btnCopy) {
-    btnCopy.onclick = async () => {
-      try {
-        const text = (currentStormData || storm).bulletin_text || "";
-        await navigator.clipboard.writeText(text);
-        if (statusSpan) {
-          statusSpan.textContent = "✓ Copied to clipboard!";
-          setTimeout(() => { statusSpan.textContent = ""; }, 3000);
-        }
-      } catch {
-        if (statusSpan) statusSpan.textContent = "Press Ctrl+C to copy";
-      }
-    };
-  }
-
-  if (btnDownload) {
-    btnDownload.onclick = () => {
-      const activeData = currentStormData || storm;
-      const blob = new Blob([activeData.bulletin_text || ""], { type: "text/plain;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `IMD_RSMC_BULLETIN_${activeData.id}.txt`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    };
-  }
 }
 
-/* ----------------------------------------------------
-   10. PIPELINE & LIVE PRODUCTS STATUS
----------------------------------------------------- */
-function createPipeline(catalog) {
-  const layers = Array.isArray(catalog.layers) ? catalog.layers : [];
-  const readyCount = layers.filter(layer => layer.status === "ready").length;
-  const cohort = layers.find(layer => layer.id === "multisource_cohort");
-  const rows = cohort?.counts?.rows || 0;
-  const complete = cohort?.counts?.complete || 0;
-
-  document.querySelector("#pipeline-summary").textContent =
-    `${readyCount}/${layers.length} LAYERS READY · ${number(complete)}/${number(rows)} COMPLETE`;
-  document.querySelector("#pipeline-next").textContent =
-    catalog.next_milestone || "Source status is being refreshed.";
-
-  document.querySelector("#pipeline-grid").innerHTML = layers.map(layer => {
-    const [label, tone] = layerStates[layer.status] || ["Status unknown", "pending"];
-    return `
-      <article class="pipeline-layer pipeline-${tone}">
-        <div class="layer-status"><span class="layer-dot"></span><span>${label}</span></div>
-        <h3>${escapeHtml(layer.name)}</h3>
-        <p>${escapeHtml(layer.purpose)}</p>
-        <small>${escapeHtml(layer.counts ? `${number(layer.counts.complete || 0)}/${number(layer.counts.rows || 0)} rows` : "Contract verified")}</small>
-      </article>
-    `;
-  }).join("");
-}
-
-function createLiveProducts(payload) {
-  const products = Array.isArray(payload.products) ? payload.products : [];
-  const currentCount = products.filter(product => product.status === "metadata_current").length;
-
-  document.querySelector("#live-summary").textContent =
-    `${currentCount}/${products.length} METADATA FEEDS CURRENT`;
-  document.querySelector("#live-next").textContent =
-    payload.next_step || "Operational-source status is being refreshed.";
-
-  document.querySelector("#live-grid").innerHTML = products.map(product => {
-    const [label, tone] = layerStates[product.status] || ["Status unknown", "pending"];
-    const age = Number.isFinite(Number(product.metadata_age_hours))
-      ? ` · ${number(product.metadata_age_hours, 1)}h old`
-      : "";
-    const published = product.latest?.published_at
-      ? `Published ${product.latest.published_at}${age}`
-      : "Timestamp unavailable";
-
-    return `
-      <article class="live-product pipeline-${tone}">
-        <div class="layer-status"><span class="layer-dot"></span><span>${label}</span></div>
-        <h3>${escapeHtml(product.name)}</h3>
-        <p>${escapeHtml(product.mode)}</p>
-        <dl>
-          <div><dt>Latency</dt><dd>${escapeHtml(product.nominal_latency)}</dd></div>
-          <div><dt>Coverage</dt><dd>${escapeHtml(product.coverage)}</dd></div>
-        </dl>
-        <small>${published}</small>
-      </article>
-    `;
-  }).join("");
-}
-
-/* ----------------------------------------------------
-   11. MAIN INITIALIZATION & STORM LOADER
----------------------------------------------------- */
 async function loadStorm(stormId) {
-  try {
-    const url = stormId ? `/api/v1/storms/${encodeURIComponent(stormId)}` : "/api/v1/storms/current";
-    const res = await fetch(url);
-    if (!res.ok) throw new Error("Could not load storm data");
-    const storm = await res.json();
-    currentStormData = storm;
-
-    renderHero(storm);
-    renderMetrics(storm);
-    renderDvorak(storm);
-    renderRI(storm);
-    renderLandfall(storm);
-    buildMap(storm);
-    setupTimeline(storm);
-    setupBulletinModal(storm);
-
-    document.querySelector("#data-status").textContent = `REPLAY READY · ${storm.observed_track.length} FIXES`;
-  } catch (err) {
-    document.querySelector("#storm-name").textContent = "Storm Replay Unavailable";
-    document.querySelector("#storm-subtitle").textContent = err.message;
-  }
+  const response = await fetch(`/api/v1/storms/${encodeURIComponent(stormId)}`);
+  if (!response.ok) throw new Error("This historical replay could not be loaded.");
+  currentStorm = await response.json();
+  await loadStormList(currentStorm.id);
+  renderOverview(currentStorm);
+  renderMap(currentStorm);
+  renderSources();
 }
 
-async function init() {
-  setupMapControls();
-
-  // Load initial storm
-  await loadStorm();
-  if (currentStormData) {
-    await loadStormSelector(currentStormData.id);
-  }
-
-  // Load auxiliary catalog & live feeds asynchronously
-  try {
-    const [dataRes, catalogRes, liveRes] = await Promise.all([
-      fetch("/api/v1/data/status").catch(() => null),
-      fetch("/api/v1/data/catalog").catch(() => null),
-      fetch("/api/v1/live/products").catch(() => null),
-    ]);
-
-    if (catalogRes?.ok) createPipeline(await catalogRes.json());
-    if (liveRes?.ok) createLiveProducts(await liveRes.json());
-  } catch (err) {
-    console.warn("Auxiliary feed error:", err);
-  }
-}
-
-// Bootstrap
-init();
+document.addEventListener("DOMContentLoaded", async () => {
+  setupNavigation(); setupTheme(); setupStormPicker(); setupBrief(); setupMapButtons();
+  try { await loadStorm("current"); } catch (error) { document.querySelector("#storm-name").textContent = "Data unavailable"; document.querySelector("#storm-subtitle").textContent = error.message; }
+});

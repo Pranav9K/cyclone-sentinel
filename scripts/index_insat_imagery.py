@@ -1,0 +1,121 @@
+"""Index locally downloaded INSAT imagery before satellite feature extraction.
+
+MOSDAC product downloads must be obtained through the user's authorised access.
+This script never downloads, fabricates, or labels imagery.  It creates a
+compact provenance catalog for real files already placed in ``data/raw/insat``
+so a later decoder/classifier has a controlled input contract.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_INPUT = PROJECT_ROOT / "data" / "raw" / "insat"
+DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "processed" / "insat_image_catalog.json"
+SUPPORTED_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".tif", ".tiff"}
+MAX_FILE_BYTES = 150 * 1024 * 1024
+MONTHS = {name: index for index, name in enumerate(("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"), start=1)}
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def capture_time_from_name(name: str) -> str | None:
+    """Parse common MOSDAC filename timestamps without guessing unknown dates."""
+    iso_match = re.search(r"(?<!\d)(20\d{6})[_-]?(\d{4})(?!\d)", name)
+    if iso_match:
+        try:
+            return datetime.strptime("".join(iso_match.groups()), "%Y%m%d%H%M").replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
+        except ValueError:
+            return None
+    mosdac_match = re.search(r"(?<!\d)(\d{2})([A-Z]{3})(20\d{2})[_-]?(\d{4})(?!\d)", name.upper())
+    if mosdac_match and mosdac_match.group(2) in MONTHS:
+        day, month, year, hour_minute = mosdac_match.groups()
+        try:
+            return datetime(int(year), MONTHS[month], int(day), int(hour_minute[:2]), int(hour_minute[2:]), tzinfo=UTC).isoformat().replace("+00:00", "Z")
+        except ValueError:
+            return None
+    return None
+
+
+def relative_path(path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(PROJECT_ROOT)).replace("\\", "/")
+    except ValueError:
+        return str(path.resolve())
+
+
+def catalog_images(input_dir: Path) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    records: list[dict[str, Any]] = []
+    skipped = {"unsupported_extension": 0, "empty": 0, "too_large": 0}
+    if not input_dir.exists():
+        return records, skipped
+    if not input_dir.is_dir():
+        raise ValueError(f"--input-dir is not a directory: {input_dir}")
+    for path in sorted((candidate for candidate in input_dir.rglob("*") if candidate.is_file()), key=lambda item: str(item).lower()):
+        if path.suffix.lower() not in SUPPORTED_SUFFIXES:
+            skipped["unsupported_extension"] += 1
+            continue
+        size = path.stat().st_size
+        if size == 0:
+            skipped["empty"] += 1
+            continue
+        if size > MAX_FILE_BYTES:
+            skipped["too_large"] += 1
+            continue
+        records.append({
+            "path": relative_path(path),
+            "bytes": size,
+            "sha256": sha256_file(path),
+            "format": path.suffix.lower().lstrip("."),
+            "capture_time_utc": capture_time_from_name(path.name),
+            "capture_time_status": "parsed_from_filename" if capture_time_from_name(path.name) else "not_available_in_filename",
+        })
+    return records, skipped
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Index real, locally downloaded INSAT image files.")
+    parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT)
+    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--dry-run", action="store_true", help="Inspect local image availability without writing a catalog.")
+    args = parser.parse_args()
+    input_dir = args.input_dir if args.input_dir.is_absolute() else PROJECT_ROOT / args.input_dir
+    output = args.output if args.output.is_absolute() else PROJECT_ROOT / args.output
+    images, skipped = catalog_images(input_dir)
+    payload = {
+        "schema_version": 1,
+        "status": "ready_for_feature_extraction" if images else "waiting_for_raw_images",
+        "generated_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "source": "Locally downloaded MOSDAC / ISRO INSAT imagery",
+        "input_dir": relative_path(input_dir),
+        "images": images,
+        "summary": {"accepted_images": len(images), "skipped": skipped},
+        "limitations": [
+            "Catalog entries prove a local file is present; they do not prove a calibrated geolocation or decoded science product.",
+            "No cloud pattern, Dvorak number, storm association, or operational classification is generated by this stage.",
+        ],
+    }
+    if args.dry_run:
+        print(json.dumps({"status": payload["status"], "input_dir": payload["input_dir"], "summary": payload["summary"]}, indent=2))
+        return
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print(f"INSAT image catalog: {len(images)} accepted image(s) · {output}")
+
+
+if __name__ == "__main__":
+    main()
