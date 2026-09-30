@@ -1,0 +1,130 @@
+{
+  "feature_names": [
+    "wind_knots",
+    "pressure_deficit_hpa",
+    "convective_symmetry_pct",
+    "log_spiral_wrap_turns",
+    "cloud_shield_diameter_km",
+    "eyewall_thermal_contrast_c",
+    "vertical_wind_shear_kt"
+  ],
+  "generated_at_utc": "2026-09-30T08:17:49.601472+00:00",
+  "metrics": {
+    "brier_multiclass_score": 0.0796,
+    "class_support": {
+      "Central Dense Overcast (CDO)": 102,
+      "Curved Band Pattern": 476,
+      "Embedded Center Pattern": 81,
+      "Eye Pattern": 74,
+      "Shear Pattern": 189
+    },
+    "macro_recall": 0.973,
+    "overall_accuracy": 0.9881,
+    "per_class_recall": {
+      "Central Dense Overcast (CDO)": 1.0,
+      "Curved Band Pattern": 1.0,
+      "Embedded Center Pattern": 0.864,
+      "Eye Pattern": 1.0,
+      "Shear Pattern": 1.0
+    },
+    "samples": 922
+  },
+  "model": {
+    "biases": [
+      -1.194743131223754,
+      -0.12400741925157692,
+      1.3820748922332613,
+      0.4623427605733773,
+      -0.5256671023313079
+    ],
+    "classes": [
+      "Eye Pattern",
+      "Central Dense Overcast (CDO)",
+      "Curved Band Pattern",
+      "Embedded Center Pattern",
+      "Shear Pattern"
+    ],
+    "feature_means": [
+      38.072350964089864,
+      9.138422076773395,
+      60.33141694675393,
+      0.682665841146294,
+      349.10826110030075,
+      7.733840438705113,
+      13.224040332566778
+    ],
+    "feature_names": [
+      "wind_knots",
+      "pressure_deficit_hpa",
+      "convective_symmetry_pct",
+      "log_spiral_wrap_turns",
+      "cloud_shield_diameter_km",
+      "eyewall_thermal_contrast_c",
+      "vertical_wind_shear_kt"
+    ],
+    "feature_scales": [
+      20.57077546408985,
+      11.004430340835064,
+      11.557664441837934,
+      0.24448920958259457,
+      97.19815750715408,
+      5.190118663346792,
+      3.9990159526960625
+    ],
+    "type": "multiclass_softmax_classifier",
+    "weights": [
+      [
+        0.2557621083145821,
+        0.650151774029205,
+        0.6338842302206258,
+        0.4555730364161466,
+        0.304121265825925,
+        1.3318556018838288,
+        0.14029654711090128
+      ],
+      [
+        0.7716592863607438,
+        0.42451720781962254,
+        0.20416078230624968,
+        0.6513502931931884,
+        1.046504794122428,
+        -0.3883087945936601,
+        0.24486242304736575
+      ],
+      [
+        -1.299675657930381,
+        -1.0664622824948937,
+        -0.513009821871358,
+        -0.4289406716949782,
+        -1.184741219352398,
+        -0.7741195391300306,
+        -1.5686334051115256
+      ],
+      [
+        0.3849682550563505,
+        0.02064270158180672,
+        0.4479119724934415,
+        0.01375706888950213,
+        0.1672506432932526,
+        0.010451228617197189,
+        -0.3033388881023785
+      ],
+      [
+        -0.11271399180129454,
+        -0.02884940093573892,
+        -0.7729471631489568,
+        -0.6917397268038588,
+        -0.3331354838892109,
+        -0.17987849677733522,
+        1.4868133230556364
+      ]
+    ]
+  },
+  "pattern_classes": [
+    "Eye Pattern",
+    "Central Dense Overcast (CDO)",
+    "Curved Band Pattern",
+    "Embedded Center Pattern",
+    "Shear Pattern"
+  ]
+}

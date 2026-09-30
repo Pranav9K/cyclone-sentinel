@@ -1,6 +1,10 @@
 {
-  "forecast_horizon_hours": 24,
   "generated_at_utc": "2026-09-30T09:29:20.026568+00:00",
+  "horizons": [
+    24,
+    48,
+    72
+  ],
   "imd_benchmarks": {
     "24": {
       "intensity_error_knots": 8.6,
@@ -18,10 +22,7 @@
       "track_error_km": 165.2
     }
   },
-  "input_path": "C:\\Users\\Pranav\\Files\\Code\\MachineLearning\\sih-qualifiers\\data\\processed\\ibtracs_ni_tracks.csv",
-  "input_storms": 265,
-  "model_note": "Multi-horizon research baseline; not an operational forecast.",
-  "multihorizon_metrics": {
+  "metrics": {
     "24": {
       "imd_benchmark_comparison": {
         "ai_intensity_mae_knots": 9.003,
@@ -97,40 +98,5 @@
         "samples": 782
       }
     }
-  },
-  "split": {
-    "cutoff_utc": "2021-05-23T21:00:00+00:00",
-    "strategy": "chronological issue-time split; train targets are strictly before the cutoff",
-    "test_samples": 1412,
-    "train_samples": 5642
-  },
-  "test_metrics": {
-    "imd_benchmark_comparison": {
-      "ai_intensity_mae_knots": 9.003,
-      "ai_track_mae_km": 149.287,
-      "benchmark_source": "IMD 5-year operational verification average (RSMC New Delhi)",
-      "imd_operational_intensity_mae_knots": 8.6,
-      "imd_operational_track_mae_km": 78.5
-    },
-    "intensity": {
-      "persistence_wind_mae_knots": 9.665,
-      "samples": 1225,
-      "wind_bias_knots": 0.436,
-      "wind_mae_knots": 9.003,
-      "wind_rmse_knots": 12.228
-    },
-    "track": {
-      "endpoint_mae_km": 149.287,
-      "endpoint_median_km": 123.992,
-      "endpoint_p90_km": 285.808,
-      "latitude_mae_degrees": 0.693,
-      "longitude_delta_mae_degrees": 1.059,
-      "motion_persistence_endpoint_mae_km": 163.595,
-      "samples": 1412
-    }
-  },
-  "training_samples": {
-    "intensity": 5257,
-    "track": 5642
   }
 }

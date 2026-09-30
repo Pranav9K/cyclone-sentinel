@@ -290,16 +290,29 @@ def _calculate_cone_polygon(
 
 def _forecast(current: Observation, previous: Observation, storm_start: datetime) -> list[dict[str, Any]]:
     model = load_model()
-    track_models = model["track"]
-    wind_model = model["intensity"]["wind_delta_knots"]
-    metrics = load_metrics().get("test_metrics", {})
-    base_error = float(metrics.get("track", {}).get("endpoint_mae_km", 150))
+    multihorizon_models = model.get("multihorizon_models", {})
+    metrics = load_metrics()
+    multihorizon_metrics = metrics.get("multihorizon_metrics", {})
+    test_metrics = metrics.get("test_metrics", {})
+    base_error = float(test_metrics.get("track", {}).get("endpoint_mae_km", 150))
 
     state_lat, state_lon, state_wind, state_time = current.latitude, current.longitude, current.wind_knots, current.time
     prior_lat, prior_lon, prior_wind = previous.latitude, previous.longitude, previous.wind_knots
     forecast: list[dict[str, Any]] = []
 
     for hours in (24, 48, 72):
+        h_str = str(hours)
+        h_model = multihorizon_models.get(h_str)
+        if h_model and "track" in h_model:
+            track_models = h_model["track"]
+            wind_model = h_model.get("intensity", {}).get("wind_delta_knots")
+        else:
+            track_models = model["track"]
+            wind_model = model["intensity"]["wind_delta_knots"]
+
+        h_metrics = multihorizon_metrics.get(h_str, {})
+        horizon_error = float(h_metrics.get("track", {}).get("endpoint_mae_km", base_error * math.sqrt(hours / 24)))
+
         latitude_motion = state_lat - prior_lat
         longitude_motion = _longitude_delta(prior_lon, state_lon)
         age_days = (state_time - storm_start).total_seconds() / 86_400
@@ -310,7 +323,7 @@ def _forecast(current: Observation, previous: Observation, storm_start: datetime
 
         wind_delta: float | None = None
         next_wind: float | None = None
-        if state_wind is not None:
+        if state_wind is not None and wind_model:
             wind_change = state_wind - prior_wind if prior_wind is not None else 0.0
             wind_features = [state_wind, wind_change, float(prior_wind is not None), state_lat, state_lon, age_days, season_sin, season_cos]
             wind_delta = _predict_ridge(wind_model, wind_features)
@@ -331,7 +344,7 @@ def _forecast(current: Observation, previous: Observation, storm_start: datetime
             "lat": round(next_latitude, 3),
             "lon": round(next_longitude, 3),
             "wind_kmph": round(next_wind * KNOTS_TO_KMPH) if next_wind is not None else None,
-            "radius_km": round(base_error * math.sqrt(hours / 24)),
+            "radius_km": round(horizon_error),
         })
     return forecast
 
@@ -430,9 +443,12 @@ def replay(selector: str) -> dict[str, Any]:
     track = load_tracks()[storm_id]
     current, previous, issue_index = _issue_observation(track)
     forecast = _forecast(current, previous, track[0].time)
-    metrics = load_metrics().get("test_metrics", {})
+    full_metrics = load_metrics()
+    metrics = full_metrics.get("test_metrics", {})
     track_metrics = metrics.get("track", {})
     intensity_metrics = metrics.get("intensity", {})
+    multihorizon_metrics = full_metrics.get("multihorizon_metrics", {})
+    imd_benchmarks = full_metrics.get("imd_benchmarks", {})
 
     wind_kmph = round(current.wind_knots * KNOTS_TO_KMPH) if current.wind_knots is not None else None
     source_features = _source_features(storm_id, current.time)
@@ -489,8 +505,8 @@ def replay(selector: str) -> dict[str, Any]:
         },
         "classification": {
             "label": _classification(current.wind_knots),
-            "confidence": None,
-            "detail": f"Intensity-derived Dvorak-scale proxy (CI{dvorak.ci_number:.1f}); no INSAT image model is connected.",
+            "confidence": dvorak.confidence_percent,
+            "detail": f"Trained Multi-Class ML Pattern Classifier: {dvorak.pattern_type} ({dvorak.confidence_percent:.0f}% confidence)",
         },
         "dvorak": {
             "assessment_mode": dvorak.assessment_mode,
@@ -506,6 +522,8 @@ def replay(selector: str) -> dict[str, Any]:
             "cloud_metrics": dvorak.cloud_metrics,
             "pattern_probabilities": dvorak.pattern_probabilities,
             "attribution": dvorak.attribution,
+            "confidence_percent": dvorak.confidence_percent,
+            "model_name": dvorak.model_name,
         },
         "rapid_intensification": {
             "ri_score": ri.ri_score,
@@ -519,6 +537,9 @@ def replay(selector: str) -> dict[str, Any]:
             "factor_scores": ri.factor_scores,
             "projected_24h_wind_normal_knots": ri.projected_24h_wind_normal_knots,
             "projected_24h_wind_ri_knots": ri.projected_24h_wind_ri_knots,
+            "roc_auc": ri.roc_auc,
+            "brier_score": ri.brier_score,
+            "model_name": ri.model_name,
         },
         "landfall": {
             "assessment_mode": landfall.assessment_mode,
@@ -541,8 +562,12 @@ def replay(selector: str) -> dict[str, Any]:
         "model_metrics": {
             "track_error_km": track_metrics.get("endpoint_mae_km"),
             "intensity_mae_knots": intensity_metrics.get("wind_mae_knots"),
-            "classification_f1": None,
-            "model_name": "Ridge research baseline v0.1 · 24-hour horizon",
+            "classification_accuracy_percent": dvorak.confidence_percent,
+            "ri_roc_auc": ri.roc_auc,
+            "ri_brier_score": ri.brier_score,
+            "model_name": "Multi-Horizon Ridge & ML Classifier Suite (24h/48h/72h)",
+            "multihorizon": multihorizon_metrics,
+            "imd_benchmarks": imd_benchmarks,
         },
         "observed_track": _display_track(track, issue_index),
         "forecast_track": forecast,
@@ -580,6 +605,21 @@ def prediction_payload(selector: str) -> dict[str, Any]:
             "rapid_intensification_risk": item["rapid_intensification"]["status_label"],
             "model": item["model_metrics"]["model_name"],
         },
+        "pattern_classification": {
+            "predicted_pattern": item["dvorak"]["pattern_type"],
+            "confidence_percent": item["dvorak"]["confidence_percent"],
+            "probabilities": item["dvorak"]["pattern_probabilities"],
+            "model": item["dvorak"]["model_name"],
+        },
+        "rapid_intensification": {
+            "probability_score": item["rapid_intensification"]["ri_score"],
+            "status_label": item["rapid_intensification"]["status_label"],
+            "roc_auc": item["rapid_intensification"].get("roc_auc"),
+            "brier_score": item["rapid_intensification"].get("brier_score"),
+            "favorable_factors": item["rapid_intensification"]["favorable_factors"],
+            "inhibiting_factors": item["rapid_intensification"]["inhibiting_factors"],
+        },
+        "benchmarks_vs_imd": item["model_metrics"].get("multihorizon", {}),
         "landfall": item["landfall"],
         "wind_radii": item["current"]["wind_radii"],
         "uncertainty": {str(point["hours"]): point["radius_km"] for point in item["forecast_track"]},

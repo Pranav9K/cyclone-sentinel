@@ -376,3 +376,29 @@ def data_catalog() -> dict:
 def live_products() -> dict:
     """Describe real-time satellite product readiness and freshest provider metadata."""
     return live_satellite_products()
+
+
+@app.get("/api/v1/models/benchmarks")
+def model_benchmarks() -> dict:
+    """Return model performance metrics and comparison with official IMD 5-year operational benchmarks."""
+    metrics_manifest = read_json_object(PROCESSED_DIR / "multihorizon_baseline_metrics.json")
+    if not metrics_manifest:
+        metrics_manifest = read_json_object(PROCESSED_DIR / "baseline_metrics.json")
+    return {
+        "benchmarks": metrics_manifest.get("multihorizon_metrics", {}),
+        "imd_reference": metrics_manifest.get("imd_benchmarks", {}),
+        "horizons_hours": [24, 48, 72],
+    }
+
+
+@app.get("/api/v1/models/pattern")
+def model_pattern_info() -> dict:
+    """Return tropical cyclone pattern classification model specs and validation metrics."""
+    return read_json_object(PROCESSED_DIR / "pattern_model.json")
+
+
+@app.get("/api/v1/models/ri")
+def model_ri_info() -> dict:
+    """Return Rapid Intensification calibrated ML model metrics, ROC-AUC, and feature attributions."""
+    return read_json_object(PROCESSED_DIR / "ri_model.json")
+

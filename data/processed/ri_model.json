@@ -1,0 +1,135 @@
+{
+  "definition": "Increase of >= 30 knots in maximum sustained wind within 24 hours (IMD/WMO standard)",
+  "feature_attributions_sample": [
+    {
+      "contribution": -0.533,
+      "favorable": false,
+      "feature": "stage_consolidation_window",
+      "raw_value": 0.0,
+      "weight": 0.829
+    },
+    {
+      "contribution": -0.447,
+      "favorable": false,
+      "feature": "season_cos",
+      "raw_value": 0.76,
+      "weight": -0.529
+    },
+    {
+      "contribution": 0.337,
+      "favorable": true,
+      "feature": "sst_estimate_celsius",
+      "raw_value": 30.0,
+      "weight": 0.673
+    },
+    {
+      "contribution": 0.183,
+      "favorable": true,
+      "feature": "season_sin",
+      "raw_value": -0.65,
+      "weight": -0.358
+    },
+    {
+      "contribution": 0.165,
+      "favorable": true,
+      "feature": "wind_knots",
+      "raw_value": 25.0,
+      "weight": -0.26
+    },
+    {
+      "contribution": -0.083,
+      "favorable": false,
+      "feature": "wind_acceleration_6h",
+      "raw_value": 0.0,
+      "weight": 0.571
+    },
+    {
+      "contribution": 0.079,
+      "favorable": true,
+      "feature": "latitude_deg",
+      "raw_value": 10.0,
+      "weight": -0.104
+    },
+    {
+      "contribution": -0.039,
+      "favorable": false,
+      "feature": "shear_estimate_knots",
+      "raw_value": 11.5,
+      "weight": 0.091
+    },
+    {
+      "contribution": -0.007,
+      "favorable": false,
+      "feature": "longitude_deg",
+      "raw_value": 85.5,
+      "weight": -0.025
+    }
+  ],
+  "generated_at_utc": "2026-09-30T08:06:17.050932+00:00",
+  "metrics": {
+    "accuracy": 0.674,
+    "brier_score": 0.1782,
+    "confusion_matrix": {
+      "fn": 9,
+      "fp": 292,
+      "tn": 595,
+      "tp": 26
+    },
+    "f1_score": 0.148,
+    "precision": 0.082,
+    "recall": 0.743,
+    "ri_events": 35,
+    "ri_prevalence_percent": 3.8,
+    "roc_auc": 0.776,
+    "samples": 922,
+    "threshold_used": 0.4
+  },
+  "model": {
+    "bias": -0.6522264202593369,
+    "feature_means": [
+      38.072350964089864,
+      0.7894923049708119,
+      13.732177604811605,
+      81.20537767557049,
+      -0.3308817183165876,
+      0.18420739386705176,
+      0.2925880063683,
+      29.498496373606933,
+      13.302405802228906
+    ],
+    "feature_names": [
+      "wind_knots",
+      "wind_acceleration_6h",
+      "latitude_deg",
+      "longitude_deg",
+      "season_sin",
+      "season_cos",
+      "stage_consolidation_window",
+      "sst_estimate_celsius",
+      "shear_estimate_knots"
+    ],
+    "feature_scales": [
+      20.57077546408985,
+      5.436761476110456,
+      4.926732188505778,
+      16.033944382478186,
+      0.6292038811266781,
+      0.6787395675100254,
+      0.45495083789100077,
+      1.0011259554607843,
+      4.180789405091338
+    ],
+    "type": "calibrated_logistic_regression",
+    "weights": [
+      -0.2598569738884399,
+      0.5706336059531406,
+      -0.1042300932010647,
+      -0.025487866406658035,
+      -0.35841326947154184,
+      -0.5286805544633959,
+      0.828566770552995,
+      0.6734812802793335,
+      0.0911239777245077
+    ]
+  }
+}

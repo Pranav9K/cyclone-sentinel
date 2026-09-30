@@ -224,11 +224,11 @@
 
           <!-- TAB 2: RESEARCH ANALYSIS (DVORAK & RI) -->
           <div id="pane-analysis" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-analysis" hidden>
-            <!-- Dvorak Detail Card -->
+            <!-- Dvorak & Pattern Classifier Detail Card -->
             <div class="hud-card">
               <div class="card-head">
-                <span class="card-title">DVORAK INTENSITY CLASSIFICATION</span>
-                <span class="card-sub">Research proxy · No raw imagery used</span>
+                <span class="card-title">AI PATTERN & INTENSITY CLASSIFIER</span>
+                <span id="analysis-pattern-badge" class="card-sub-tag">ML Softmax</span>
               </div>
               <div class="dvorak-summary">
                 <div class="dvorak-t-display">
@@ -238,7 +238,19 @@
                     <small id="analysis-dvorak-ci" class="dvorak-ci-text">CI —</small>
                   </div>
                 </div>
-                <p id="analysis-dvorak-desc" class="analysis-copy">Loading Dvorak proxy details…</p>
+                <p id="analysis-dvorak-desc" class="analysis-copy">Loading pattern classifier details…</p>
+
+                <!-- 5-Class Pattern Probability Distribution -->
+                <div class="pattern-distribution-section">
+                  <div class="pattern-dist-head">
+                    <span class="dist-title">5-CLASS CONVECTIVE PATTERN PROBABILITIES</span>
+                    <span id="analysis-pattern-conf" class="conf-tag">Confidence —%</span>
+                  </div>
+                  <div id="analysis-pattern-probs" class="pattern-prob-list">
+                    <!-- Populated dynamically via app.js -->
+                  </div>
+                </div>
+
                 <div class="spec-list">
                   <div><span>Central Pressure Deficit</span><strong id="analysis-dvorak-deficit">—</strong></div>
                   <div><span>Estimated Environmental Pressure</span><strong id="analysis-dvorak-env-pres">—</strong></div>
@@ -247,10 +259,10 @@
               </div>
             </div>
 
-            <!-- Rapid Intensification Screening Card -->
+            <!-- Rapid Intensification ML Model Card -->
             <div class="hud-card">
               <div class="card-head">
-                <span class="card-title">RAPID INTENSIFICATION (RI) SCREEN</span>
+                <span class="card-title">RAPID INTENSIFICATION (RI) ML MODEL</span>
                 <span id="analysis-ri-status-tag" class="card-sub-tag">Screening</span>
               </div>
               <div class="ri-score-banner">
@@ -259,36 +271,41 @@
                   <small>/100</small>
                 </div>
                 <div class="ri-score-meta">
-                  <strong id="analysis-ri-heading">Screening score</strong>
+                  <strong id="analysis-ri-heading">Calibrated ML Probability</strong>
                   <p id="analysis-ri-summary" class="analysis-copy">Assessing environmental parameters…</p>
+                  <div class="ri-stats-sub">
+                    <span class="metric-pill">ROC-AUC: <strong id="analysis-ri-auc">0.78</strong></span>
+                    <span class="metric-pill">Brier Score: <strong id="analysis-ri-brier">0.18</strong></span>
+                  </div>
                 </div>
               </div>
               <div class="factor-breakdown-list" id="analysis-ri-factors"></div>
             </div>
 
-            <!-- Held-out Model Metrics -->
+            <!-- Held-out Model Metrics & IMD Benchmark Comparison -->
             <div class="hud-card">
               <div class="card-head">
-                <span class="card-title">BASELINE RIDGE-MODEL ERROR</span>
-                <span class="card-sub">Held-out test set metrics</span>
+                <span class="card-title">SENTINEL AI vs IMD OPERATIONAL BENCHMARKS</span>
+                <span class="card-sub">MoES / RSMC 5-Year Average</span>
               </div>
               <div class="forecast-error-grid">
                 <div class="error-item">
                   <span class="error-step">+24 Hours</span>
-                  <strong id="analysis-err-24">±150 km</strong>
-                  <small>MAE radius</small>
+                  <strong id="analysis-err-24">±149 km</strong>
+                  <small id="analysis-sub-24">IMD: 78 km · Wind: 9.0 kt</small>
                 </div>
                 <div class="error-item">
                   <span class="error-step">+48 Hours</span>
-                  <strong id="analysis-err-48">±212 km</strong>
-                  <small>MAE radius</small>
+                  <strong id="analysis-err-48">±313 km</strong>
+                  <small id="analysis-sub-48">IMD: 125 km · Wind: 14.0 kt</small>
                 </div>
                 <div class="error-item">
                   <span class="error-step">+72 Hours</span>
-                  <strong id="analysis-err-72">±260 km</strong>
-                  <small>MAE radius</small>
+                  <strong id="analysis-err-72">±454 km</strong>
+                  <small id="analysis-sub-72">IMD: 165 km · Wind: 16.5 kt</small>
                 </div>
               </div>
+              <div class="imd-table-wrap" id="imd-table-container"></div>
             </div>
           </div>
 

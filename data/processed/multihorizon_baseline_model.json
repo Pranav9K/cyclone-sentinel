@@ -1,62 +1,15 @@
 {
-  "forecast_horizon_hours": 24,
   "generated_at_utc": "2026-09-30T09:29:20.026568+00:00",
+  "horizons": [
+    24,
+    48,
+    72
+  ],
   "inference_contract": {
-    "intensity_prediction": "Add predicted wind_delta_knots to current wind_knots; floor the result at zero.",
-    "longitude_normalization": "Normalize resulting longitude to [-180, 180).",
-    "track_prediction": "Add each predicted displacement in degrees to the current latitude/longitude."
+    "intensity": "Add predicted wind_delta_knots to initial wind_knots; clamp at zero.",
+    "track": "For a given horizon H in (24, 48, 72), add predicted latitude_delta and longitude_delta to initial observation."
   },
-  "input_path": "C:\\Users\\Pranav\\Files\\Code\\MachineLearning\\sih-qualifiers\\data\\processed\\ibtracs_ni_tracks.csv",
-  "input_storms": 265,
-  "intensity": {
-    "wind_delta_knots": {
-      "alpha": 10.0,
-      "coefficients_standardized": [
-        0.9395092257941817,
-        -5.515992022438441,
-        3.9045251920003667,
-        0.3010699405013248,
-        -2.849901023539167,
-        0.9989386366813463,
-        -2.0397750271748287,
-        -0.7237074366369826,
-        -2.494241627688343
-      ],
-      "feature_means": [
-        38.900703823473464,
-        0.8468708388814914,
-        0.9805972988396424,
-        13.633612326421913,
-        81.32459577705916,
-        3.356548411641621,
-        -0.3417370052338576,
-        0.2126620306186506
-      ],
-      "feature_names": [
-        "wind_knots",
-        "wind_change_last_6h_knots",
-        "wind_change_available",
-        "latitude_deg",
-        "longitude_deg",
-        "storm_age_days",
-        "season_sin",
-        "season_cos"
-      ],
-      "feature_scales": [
-        20.828631138389245,
-        5.635017337743606,
-        0.13793562392666905,
-        4.813017956472711,
-        16.79652530353834,
-        2.7878038290827085,
-        0.6108538616678206,
-        0.6817977996975771
-      ],
-      "type": "ridge_linear_regression"
-    }
-  },
-  "model_note": "Multi-horizon research baseline; not an operational forecast.",
-  "multihorizon_models": {
+  "models": {
     "24": {
       "cutoff_utc": "2021-05-23T21:00:00+00:00",
       "horizon_hours": 24,
@@ -476,96 +429,6 @@
         "intensity": 2937,
         "track": 3101
       }
-    }
-  },
-  "split": {
-    "cutoff_utc": "2021-05-23T21:00:00+00:00",
-    "strategy": "chronological issue-time split; train targets are strictly before the cutoff",
-    "test_samples": 1412,
-    "train_samples": 5642
-  },
-  "track": {
-    "latitude_delta_degrees": {
-      "alpha": 10.0,
-      "coefficients_standardized": [
-        0.9549627791563253,
-        -0.2578494707673154,
-        0.12045945167986444,
-        0.8454143309357275,
-        0.24772355034161306,
-        -0.025233792887607756,
-        -0.07691983656528294,
-        -0.35466359411233195
-      ],
-      "feature_means": [
-        14.038957816377172,
-        81.5304679191776,
-        0.23099964551577454,
-        -0.4241049273307335,
-        3.2682116270825947,
-        -0.34986126138247176,
-        0.17461519584583218
-      ],
-      "feature_names": [
-        "latitude_deg",
-        "longitude_deg",
-        "latitude_motion_last_6h_deg",
-        "longitude_motion_last_6h_deg",
-        "storm_age_days",
-        "season_sin",
-        "season_cos"
-      ],
-      "feature_scales": [
-        5.007002842775073,
-        16.51184557857224,
-        0.3619994893267492,
-        0.5488800963190771,
-        2.7553072279003734,
-        0.6069449971947339,
-        0.6918991267113088
-      ],
-      "type": "ridge_linear_regression"
-    },
-    "longitude_delta_degrees": {
-      "alpha": 10.0,
-      "coefficients_standardized": [
-        -1.616767103863877,
-        0.3804881932542604,
-        -0.12131056270607168,
-        0.157619723700071,
-        1.5908178189886708,
-        -0.10237510690366626,
-        0.3708853954257372,
-        0.3553731867520895
-      ],
-      "feature_means": [
-        14.038957816377172,
-        81.5304679191776,
-        0.23099964551577454,
-        -0.4241049273307335,
-        3.2682116270825947,
-        -0.34986126138247176,
-        0.17461519584583218
-      ],
-      "feature_names": [
-        "latitude_deg",
-        "longitude_deg",
-        "latitude_motion_last_6h_deg",
-        "longitude_motion_last_6h_deg",
-        "storm_age_days",
-        "season_sin",
-        "season_cos"
-      ],
-      "feature_scales": [
-        5.007002842775073,
-        16.51184557857224,
-        0.3619994893267492,
-        0.5488800963190771,
-        2.7553072279003734,
-        0.6069449971947339,
-        0.6918991267113088
-      ],
-      "type": "ridge_linear_regression"
     }
   }
 }
