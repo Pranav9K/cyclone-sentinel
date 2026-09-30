@@ -2,6 +2,8 @@
 
 An AI-assisted tropical-cyclone monitoring and early-impact dashboard for the North Indian Ocean.
 
+Deployed on - https://cyclone-sentinel.onrender.com/
+
 ## What works now
 
 - The latest collected NOAA IBTrACS storm as a historical replay, selected by its most recent observation.
